@@ -1,4 +1,5 @@
 import './style.css'
+import { StoreScene } from './store-scene'
 
 type Product = {
   id: string
@@ -53,8 +54,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </section>
     <div class="store-layout">
       <section class="store-panel" aria-label="Explorează magazinul">
-        <div class="store-topline"><span><i class="status-dot"></i> LITTLE STORE — 01</span><span>3 GUSTURI · TOATĂ CURIOSITATEA</span></div>
+        <div class="store-topline"><span><i class="status-dot"></i> LITTLE STORE — 01</span><span>MAGAZIN 3D · 3 GUSTURI</span></div>
         <div class="scene-viewport">
+          <div class="scene-3d" id="scene-mount" aria-hidden="true"></div>
           <div id="store-world" class="store-world" tabindex="0" role="region" aria-label="Magazin. Deplasează-te cu săgețile sau WASD. Apasă E lângă un raft pentru a inspecta." aria-describedby="movement-help">
             <div class="back-wall" aria-hidden="true"><div class="wall-brand">sly<span>THE LITTLE STORE</span></div><div class="wall-message">O pauză mică.<br><em>O lume de descoperit.</em></div><span class="wall-star">✳</span></div>
             <div class="floor" aria-hidden="true"></div>
@@ -82,8 +84,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
           <div class="entry-overlay" id="entry">
             <div class="entry-card"><span class="entry-icon" aria-hidden="true">↗</span><div class="eyebrow">UȘA E DESCHISĂ</div><h2>Un mic pas.<br><em>Direct în magazin.</em></h2><p>Tu, un cărucior și trei rafturi de explorat.<br>Fără grabă. Fără listă de cumpărături.</p><button class="button primary" id="enter-store">Intră în magazin <span aria-hidden="true">↗</span></button><small>Fără cont · Fără plată · Doar curiozitate</small></div>
           </div>
-          <span class="scene-demo">AMbALAJE CONCEPT · VALORI DEMO</span>
+          <span class="scene-demo">AMBALAJE CONCEPT · VALORI DEMO</span>
+          <div class="camera-controls" role="group" aria-label="Vedere 3D"><span>VEDERE 3D</span><button data-camera="-1" aria-label="Rotește vederea la stânga" disabled>↶</button><button data-camera="1" aria-label="Rotește vederea la dreapta" disabled>↷</button></div>
         </div>
+        <p class="webgl-notice" id="webgl-notice" role="status" hidden>Vederea 3D nu este disponibilă în acest browser. Poți explora varianta 2D sau folosi accesul direct la raft; etichetele și căruciorul funcționează în continuare.</p>
         <div class="game-controls">
           <div class="movement-copy"><strong id="location" role="status">Căruciorul te așteaptă.</strong><p id="movement-help"><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> pentru mers · <kbd>E</kbd> la raft<br>Sau alege direct un produs de mai jos.</p></div>
           <button class="button inspect-button" id="inspect-nearby" disabled>Apropie-te de un raft <span aria-hidden="true">↗</span></button>
@@ -132,6 +136,41 @@ let x = 470
 let y = 525
 let lastTime = 0
 let accumulator = 0
+let storeScene: StoreScene | undefined
+let threeAvailable = false
+
+try {
+  storeScene = new StoreScene({
+    mount: document.querySelector<HTMLElement>('#scene-mount')!,
+    products,
+    inspect: id => {
+      if (!entered || dialog.open) return
+      const product = products.find(item => item.id === id)
+      world.focus({ preventScroll: true })
+      if (product) openProduct(product)
+    },
+    availability: available => {
+      threeAvailable = available
+      document.querySelector('.scene-viewport')!.classList.toggle('has-webgl', available)
+      document.querySelector<HTMLElement>('#scene-mount')!.hidden = !available
+      document.querySelector<HTMLElement>('#webgl-notice')!.hidden = available
+      document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.disabled = !available || !entered)
+      clearMovement()
+    },
+  })
+} catch {
+  document.querySelector<HTMLElement>('#scene-mount')!.hidden = true
+  document.querySelector<HTMLElement>('#webgl-notice')!.hidden = false
+}
+document.querySelector('#scene-mount')!.addEventListener('pointerdown', () => {
+  if (entered && !dialog.open) world.focus({ preventScroll: true })
+})
+document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.addEventListener('click', () => {
+  clearMovement()
+  storeScene?.rotate(Number(button.dataset.camera))
+  world.focus({ preventScroll: true })
+}))
+if (import.meta.hot) import.meta.hot.dispose(() => storeScene?.dispose())
 
 function announce(message: string) {
   document.querySelector('#announcement')!.textContent = message
@@ -170,18 +209,19 @@ function renderPlayer() {
   }
 }
 
-// The collision footprint includes the player and trolley; fixed steps prevent tunnelling.
+// A rotation-safe footprint contains the avatar and trolley in every heading.
 function canMove(nextX: number, nextY: number) {
-  if (nextX < 55 || nextX > 900 || nextY < 153 || nextY > 568) return false
-  return !products.some(p => nextX + 49 > p.x && nextX - 24 < p.x + 165 && nextY + 14 > 205 && nextY - 37 < 365)
+  if (nextX < 45 || nextX > 915 || nextY < 132 || nextY > 568) return false
+  return !products.some(p => nextX + 53 > p.x && nextX - 53 < p.x + 165 && nextY + 53 > 205 && nextY - 53 < 365)
 }
 
 function tick(time: number) {
   const delta = lastTime ? Math.min((time - lastTime) / 1000, 0.1) : 0
   lastTime = time
-  const directions = new Set([...heldKeys, ...pointerDirections.values()])
+  const directions = new Set([...heldKeys].map(key => keyDirections[key]).concat([...pointerDirections.values()]))
   let dx = Number(directions.has('right')) - Number(directions.has('left'))
   let dy = Number(directions.has('down')) - Number(directions.has('up'))
+  if (threeAvailable && storeScene) ({ dx, dy } = storeScene.movement(dx, dy))
   const moving = entered && !dialog.open && !document.hidden && (dx !== 0 || dy !== 0)
   player.classList.toggle('walking', moving)
   if (moving) {
@@ -202,6 +242,7 @@ function tick(time: number) {
   } else {
     accumulator = 0
   }
+  if (!document.hidden) storeScene?.update(x, y, moving, dx, dy, time, entered ? nearby?.id : undefined)
   requestAnimationFrame(tick)
 }
 player.style.left = `${x}px`
@@ -217,15 +258,14 @@ window.addEventListener('keydown', event => {
   const key = event.key.toLowerCase()
   if (keyDirections[key]) {
     event.preventDefault()
-    heldKeys.add(keyDirections[key]!)
+    heldKeys.add(key)
   } else if (key === 'e' && nearby && !event.repeat) {
     event.preventDefault()
     openProduct(nearby)
   }
 })
 window.addEventListener('keyup', event => {
-  const direction = keyDirections[event.key.toLowerCase()]
-  if (direction) heldKeys.delete(direction)
+  heldKeys.delete(event.key.toLowerCase())
 })
 window.addEventListener('blur', clearMovement)
 document.addEventListener('visibilitychange', () => {
@@ -249,8 +289,9 @@ document.querySelectorAll<HTMLButtonElement>('[data-direction]').forEach(button 
   button.addEventListener('click', event => {
     if (event.detail !== 0 || !entered || dialog.open) return
     const direction = button.dataset.direction
-    const dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0
-    const dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0
+    let dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0
+    let dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0
+    if (threeAvailable && storeScene) ({ dx, dy } = storeScene.movement(dx, dy))
     for (let i = 0; i < 12; i++) {
       if (canMove(x + dx * 2, y)) x += dx * 2
       if (canMove(x, y + dy * 2)) y += dy * 2
@@ -262,6 +303,7 @@ document.querySelector('#enter-store')!.addEventListener('click', () => {
   entered = true
   document.querySelector<HTMLElement>('#entry')!.hidden = true
   document.querySelectorAll<HTMLButtonElement>('[data-product], [data-direction]').forEach(button => button.disabled = false)
+  document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.disabled = !threeAvailable)
   world.focus({ preventScroll: true })
   renderPlayer()
   announce('Ai intrat în magazin. Folosește săgețile sau WASD, ori butoanele de acces direct la raft.')
@@ -330,9 +372,12 @@ function openProduct(product: Product) {
 }
 dialog.querySelector('.close-button')!.addEventListener('click', () => dialog.close())
 dialog.addEventListener('close', () => {
+  if (dialog.open) return
   clearMovement()
   document.body.classList.remove('modal-open')
-  opener?.focus({ preventScroll: true })
+  if (document.activeElement === document.body || dialog.contains(document.activeElement)) {
+    opener?.focus({ preventScroll: true })
+  }
 })
 dialog.addEventListener('click', event => {
   if (event.target !== dialog) return
@@ -418,6 +463,7 @@ function renderCart() {
     announce(`O porție ${entry.product.name} scoasă. ${cart.reduce((sum, item) => sum + item.quantity, 0)} porții în cărucior. Total ${document.querySelector('#cart-total')!.textContent} kcal.`)
   }))
   const visiblePacks = cart.flatMap(entry => Array.from({ length: Math.min(entry.quantity, 6) }, () => entry.product)).slice(0, 6)
+  storeScene?.setCart(visiblePacks, count)
   document.querySelector('#trolley-packs')!.innerHTML = visiblePacks.map(miniPack).join('')
   const trolleyCount = document.querySelector<HTMLElement>('#trolley-count')!
   trolleyCount.hidden = count === 0

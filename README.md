@@ -1,6 +1,6 @@
 # SLY Nutrition
 
-Romanian-language virtual store prototype built with TypeScript and Vite. Explore as a visible player with a trolley, inspect product concepts, and collect portions in a calorie-based demonstration cart. No purchases, checkout, account, or backend.
+Romanian-language 3D virtual store prototype built with TypeScript, Three.js, and Vite. Explore as a visible player with a trolley, inspect product concepts, and collect portions in a calorie-based demonstration cart. No purchases, checkout, account, or backend.
 
 ## Run locally
 
@@ -15,8 +15,9 @@ npm run dev
 
 ## Virtual store
 
-- Enter an elevated-view store with a visible player, trolley, and three wafer-flavor shelves.
+- Enter a WebGL-rendered 3D store with a visible player, trolley, and three wafer-flavor shelves.
 - Explore using arrow keys / WASD or on-screen direction controls. Accessible product buttons provide an alternative to moving through the store.
+- Rotate the camera using the view buttons, click a 3D shelf, or press E near one to inspect its product.
 - Inspect the front and back of a concept package, select a portion, and explore illustrative nutrition values. Real ingredients and allergens are not available in this prototype.
 - Add portions to the trolley and remove them again. The cart shows quantities, portion sizes, and total illustrative kcal, never currency or a checkout button.
 - Each cart entry retains the portion and nutrition values used when it was added; later input edits do not change existing entries.
@@ -24,6 +25,8 @@ npm run dev
 - Responsive controls, native keyboard-accessible dialogs, and reduced-motion support.
 
 The cart is an exploration tool, not a food log or recommended intake. Calories are neutral information, not a score, target, or spending limit. State stays in memory and resets on page reload.
+
+The 3D view requires WebGL2. If it is unavailable or its context is lost, a 2D store and accessible product controls keep inspection and cart interactions available.
 
 ## Content boundaries
 
