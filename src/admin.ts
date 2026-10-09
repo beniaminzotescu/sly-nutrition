@@ -306,7 +306,7 @@ export function mountAdmin(root: HTMLElement, onCatalogChanged: () => void): () 
       if (table !== 'products' || !current(version) || viewId !== view) return
       preview.replaceChildren(el('h3', 'Previzualizare — nesalvată'))
       if (previewImageUrl) {
-        const image = el('img')
+        const image = document.createElement('img')
         image.src = previewImageUrl
         image.alt = `Fotografie: ${text('name') || 'produs'}`
         image.referrerPolicy = 'no-referrer'

@@ -11,7 +11,16 @@ npm ci
 npm run dev
 ```
 
-`npm run build` type-checks the application and generates `dist/`. `npm run preview` serves the production build locally. Deploy `dist/` to a static host. There is no configured lint or JavaScript test runner; database authorization regressions are supplied as native SQL.
+`npm run build` type-checks the application and generates `dist/`. `npm run preview` serves the production build locally. Deploy `dist/` to a static host. There is no configured linter or third-party test framework.
+
+With Node.js 24 LTS, run the native regression checks:
+
+```sh
+node /home/runner/work/sly-nutrition/sly-nutrition/tests/frontend-state.test.mjs
+node --test /home/runner/work/sly-nutrition/sly-nutrition/supabase/tests/auth-boundaries.mjs
+```
+
+These cover cart/snapshot invariants and mocked authentication boundaries, not hosted end-to-end behavior. Database authorization regressions use native SQL as described below.
 
 ## Connected and demonstration modes
 
@@ -53,6 +62,8 @@ Live email, OAuth, cloud uploads, cloud persistence and remote account deletion 
 Optionally apply `/home/runner/work/sly-nutrition/sly-nutrition/supabase/seed.sql` after the migration to initialize the eight requested product names and retailer assignments. The seed supplies no verified nutrition or artwork: label values remain unknown. This is not automatic production content.
 
 Catalog images are private storage objects accessed through expiring signed URLs, not arbitrary external images. Archiving a product prevents new public image authorizations; a previously issued signed URL may remain valid until expiry. Use the admin workflow to manage images and database records together.
+
+Account deletion preserves shared catalog artwork by releasing the verified caller's ownership of `product-images` objects through a service-role-only operation. Ownership of files in unrelated buckets can still require operator reassignment before Supabase permits deletion. Abandoned uploads are not automatically collected: operators may remove only images that no product references, using the orphan-only storage policy.
 
 ### Database regression checks
 

@@ -50,7 +50,7 @@ begin
   if value is null or jsonb_typeof(value) <> 'object' or not value ?& array['level','completed'] or
      value - array['level','completed'] <> '{}'::jsonb or
      jsonb_typeof(value->'level') <> 'number' or jsonb_typeof(value->'completed') <> 'array' then return false; end if;
-  if (value->>'level')::numeric not between 0 and 3 or trunc((value->>'level')::numeric) <> (value->>'level')::numeric or
+  if (value->>'level')::numeric not between 1 and 4 or trunc((value->>'level')::numeric) <> (value->>'level')::numeric or
      jsonb_array_length(value->'completed') > 100 then return false; end if;
   for item in select * from jsonb_array_elements(value->'completed') loop
     if jsonb_typeof(item) <> 'string' or length(item #>> '{}') not between 1 and 100 then return false; end if;
@@ -177,7 +177,7 @@ create table public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null default 'Explorator' check (length(btrim(display_name)) between 1 and 80),
   avatar_color text not null default 'leaf' check (avatar_color in ('grain','leaf','clay','milk')),
-  progress jsonb not null default '{"level":0,"completed":[]}' check (public.valid_progress(progress)),
+  progress jsonb not null default '{"level":1,"completed":[]}' check (public.valid_progress(progress)),
   body_profile jsonb check (public.valid_body(body_profile)),
   body_consent_at timestamptz,
   check ((body_profile is null) = (body_consent_at is null))

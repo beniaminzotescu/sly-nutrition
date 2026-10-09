@@ -95,9 +95,10 @@ on conflict(user_id) do update set progress=excluded.progress;
 select public.test_assert((select body_profile->>'weight'='70' and display_name='Updated nickname' from public.profiles),'partial progress upsert preserves body and nickname');
 select public.test_denied($q$update public.profiles set body_profile='{"age":17,"height":170,"weight":70,"coefficient":5,"activity":1.2}'$q$);
 select public.test_denied($q$update public.profiles set progress='{"admin":true}'$q$);
-select public.test_assert(public.valid_progress('{"level":0,"completed":[]}'),'new player level zero accepted');
-select public.test_assert(public.valid_progress('{"level":3,"completed":["inspect","compare","review"]}'),'all mission progress accepted');
-select public.test_assert(public.valid_progress('{"level":4,"completed":[]}') is false,'unsupported progress level rejected');
+select public.test_assert(public.valid_progress('{"level":1,"completed":[]}'),'new player level one accepted');
+select public.test_assert(public.valid_progress('{"level":3,"completed":["inspect","compare"]}'),'intermediate mission level accepted');
+select public.test_assert(public.valid_progress('{"level":4,"completed":["inspect","compare","review"]}'),'all mission progress accepted');
+select public.test_assert(public.valid_progress('{"level":5,"completed":[]}') is false,'unsupported progress level rejected');
 select public.test_denied($q$insert into public.profiles(user_id) values ('00000000-0000-4000-8000-000000000002')$q$);
 insert into public.saved_lists(id,user_id,name,entries) values
  ('50000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','My snapshot',

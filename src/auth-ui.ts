@@ -78,7 +78,6 @@ export function mountAuth(root: HTMLElement, options: { onSession?: (session: Se
       root.querySelector('[data-forget]')!.addEventListener('click', () => {
         void run(async () => {
           await saveProfile({ body_profile: null, body_consent_at: null })
-          root.dispatchEvent(new CustomEvent('body-consent-revoked', { bubbles: true }))
           root.dispatchEvent(new CustomEvent('body-profile-cleared', { bubbles: true }))
         }, 'Datele corporale salvate au fost șterse și acordul retras.')
       })
