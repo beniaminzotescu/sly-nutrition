@@ -32,7 +32,15 @@ export function initialNutritionSources(product: Product): NutritionSources {
   return Object.fromEntries(nutrientKeys.map(key => [key, product.nutrition[key] === null ? 'unknown' : initialSource(product)])) as NutritionSources
 }
 export function shoppingKey(entry: Omit<ShoppingEntry, 'key' | 'quantity'>) {
-  return JSON.stringify([entry.product, entry.packageAmount, entry.packageUnit, entry.unitsPerPack, entry.amountSource,
+  const product = entry.product
+  const identity = [
+    product.id, product.name, product.department, product.departmentName ?? null, product.group, product.color,
+    product.shape ?? null, product.readiness, product.portion, product.packageAmount, product.packageUnit,
+    product.unitsPerPack, nutrientKeys.map(key => product.nutrition[key]),
+    product.provenance.status, product.provenance.source, product.ingredients || null,
+    product.allergens || null, product.imagePath ?? null,
+  ]
+  return JSON.stringify([identity, entry.packageAmount, entry.packageUnit, entry.unitsPerPack, entry.amountSource,
     nutrientKeys.map(key => [entry.nutrition[key], entry.nutritionSources[key]])])
 }
 export function entryAmount(entry: ShoppingEntry) {

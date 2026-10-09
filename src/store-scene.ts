@@ -628,7 +628,7 @@ export class StoreScene {
   }
 
   setAvatarColor(color: string) {
-    this.shirtMaterial?.color.set(({ clay: '#db8c51', leaf: '#83a36a', milk: '#cfdfed' } as Record<string, string>)[color] ?? '#db8c51')
+    this.shirtMaterial?.color.set(({ clay: '#db8c51', leaf: '#83a36a', milk: '#cfdfed', grain: '#cdb071' } as Record<string, string>)[color] ?? '#db8c51')
     this.dirty = true
   }
 

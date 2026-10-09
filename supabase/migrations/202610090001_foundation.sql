@@ -21,10 +21,11 @@ language sql immutable set search_path = '' as $$
     (value #>> '{}')::numeric between minimum and maximum and mod((value #>> '{}')::numeric,step) = 0
   else false end;
 $$;
-create function public.valid_json_text(value jsonb, maximum integer) returns boolean
+create function public.valid_json_text(value jsonb, maximum integer, multiline boolean default false) returns boolean
 language sql immutable set search_path = '' as $$
   select case when jsonb_typeof(value) = 'string' then
-    length(btrim(value #>> '{}')) > 0 and length(value #>> '{}') <= maximum and (value #>> '{}') !~ '[[:cntrl:]]'
+    length(btrim(value #>> '{}', E' \t\n\r')) > 0 and length(value #>> '{}') <= maximum and
+    (case when multiline then translate(value #>> '{}', E'\t\n\r', '') else value #>> '{}' end) !~ '[[:cntrl:]]'
   else false end;
 $$;
 create function public.valid_nutrition(value jsonb) returns boolean
@@ -111,7 +112,7 @@ begin
     if product->>'id' !~ '^[A-Za-z0-9_-]+$' or product->>'department' !~ '^[A-Za-z0-9_-]+$' or
        product->>'color' not in ('grain','leaf','clay','milk') then return false; end if;
     foreach k in array array['departmentName','ingredients','allergens'] loop
-      if product ? k and not public.valid_json_text(product->k,case when k = 'departmentName' then 240 when k = 'ingredients' then 4000 else 2000 end) then return false; end if;
+      if product ? k and not public.valid_json_text(product->k,case when k = 'departmentName' then 243 when k = 'ingredients' then 4000 else 2000 end,k in ('ingredients','allergens')) then return false; end if;
     end loop;
     if product ? 'shape' and coalesce(product->>'shape','') not in ('box','can','bottle','tray','wafer','pasta') then return false; end if;
     if product ? 'imagePath' and (jsonb_typeof(product->'imagePath') <> 'string' or
@@ -121,7 +122,7 @@ begin
        not (product->'provenance') ?& array['status','source'] or
        (product->'provenance') - array['status','source'] <> '{}'::jsonb or
        coalesce(product->'provenance'->>'status','') not in ('illustrative','verified-label','pending-label') or
-       not public.valid_json_text(product->'provenance'->'source',1000) then return false; end if;
+       not public.valid_json_text(product->'provenance'->'source',1000,true) then return false; end if;
     expected_source := case product->>'readiness' when 'illustrative' then 'illustrative' when 'approved' then 'verified-label' else 'pending-label' end;
     if product->'provenance'->>'status' <> expected_source then return false; end if;
     if not public.valid_json_number(product->'portion',5,500,5) or not public.valid_json_number(product->'unitsPerPack',1,100,1) then return false; end if;
@@ -160,15 +161,15 @@ create table public.products (
   portion numeric not null default 100 check (portion between 5 and 500 and mod(portion,5) = 0),
   nutrition jsonb not null default '{"calories":null,"protein":null,"fibre":null,"sugar":null}' check (public.valid_nutrition(nutrition)),
   image_path text check (image_path ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(webp|png|jpg|jpeg)$'),
-  ingredients text check (length(ingredients) <= 4000 and ingredients !~ '[[:cntrl:]]'),
-  allergens text check (length(allergens) <= 2000 and allergens !~ '[[:cntrl:]]'),
-  source text not null default '' check (length(source) <= 1000 and source !~ '[[:cntrl:]]'),
+  ingredients text check (length(ingredients) <= 4000 and translate(ingredients,E'\t\n\r','') !~ '[[:cntrl:]]'),
+  allergens text check (length(allergens) <= 2000 and translate(allergens,E'\t\n\r','') !~ '[[:cntrl:]]'),
+  source text not null default '' check (length(source) <= 1000 and translate(source,E'\t\n\r','') !~ '[[:cntrl:]]'),
   status text not null default 'draft' check (status in ('draft','published','archived')),
   label_verified boolean not null default false,
-  check (status <> 'published' or length(btrim(source)) > 0),
+  check (status <> 'published' or length(btrim(source,E' \t\n\r')) > 0),
   check (not label_verified or (
-    length(btrim(source)) > 0 and package_amount is not null and ingredients is not null and allergens is not null and
-    length(btrim(ingredients)) > 0 and length(btrim(allergens)) > 0 and
+    length(btrim(source,E' \t\n\r')) > 0 and package_amount is not null and ingredients is not null and allergens is not null and
+    length(btrim(ingredients,E' \t\n\r')) > 0 and length(btrim(allergens,E' \t\n\r')) > 0 and
     nutrition->'calories' <> 'null'::jsonb and nutrition->'protein' <> 'null'::jsonb and
     nutrition->'fibre' <> 'null'::jsonb and nutrition->'sugar' <> 'null'::jsonb))
 );

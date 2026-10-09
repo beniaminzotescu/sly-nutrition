@@ -6,14 +6,19 @@ function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Snapshot invalid.')
   return value as Record<string, unknown>
 }
-function text(value: unknown, max: number) {
-  if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u001f\u007f]/.test(value)) throw Error('Text invalid în listă.')
+function text(value: unknown, max: number, multiline = false) {
+  const invalidControls = multiline ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/
+  if (typeof value !== 'string' || !value.trim() || value.length > max || invalidControls.test(value)) throw Error('Text invalid în listă.')
   return value
 }
 function identifier(value: unknown) {
   const id = text(value, 100)
   if (!/^[A-Za-z0-9_-]+$/.test(id)) throw Error('Identificator invalid.')
   return id
+}
+function imagePath(value: unknown) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(webp|png|jpg|jpeg)$/.test(value)) throw Error('Cale imagine invalidă.')
+  return value
 }
 function numeric(value: unknown, min: number, max: number, integer = false): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value)) || (!integer && Math.abs(value * 10 - Math.round(value * 10)) > 1e-6)) throw Error('Cantitate invalidă în listă.')
@@ -45,14 +50,15 @@ export function validateShoppingEntries(value: unknown): ShoppingEntry[] {
     if (portion % 5 !== 0) throw Error('Porția trebuie să fie în pași de 5.')
     const product = {
       id: identifier(p.id), name: text(p.name, 200), group: text(p.group, 100), department: identifier(p.department),
-      ...(p.departmentName === undefined ? {} : { departmentName: text(p.departmentName, 240) }),
+      ...(p.departmentName === undefined ? {} : { departmentName: text(p.departmentName, 243) }),
+      ...(p.imagePath === undefined ? {} : { imagePath: imagePath(p.imagePath) }),
       readiness: p.readiness, color: p.color, portion,
       ...(p.shape === undefined ? {} : { shape: ['box', 'can', 'bottle', 'tray', 'wafer', 'pasta'].includes(String(p.shape)) ? p.shape : undefined }),
-      ...(typeof p.ingredients === 'string' && p.ingredients ? { ingredients: text(p.ingredients, 4000) } : {}),
-      ...(typeof p.allergens === 'string' && p.allergens ? { allergens: text(p.allergens, 2000) } : {}),
+      ...(typeof p.ingredients === 'string' && p.ingredients ? { ingredients: text(p.ingredients, 4000, true) } : {}),
+      ...(typeof p.allergens === 'string' && p.allergens ? { allergens: text(p.allergens, 2000, true) } : {}),
       packageAmount: amount(p.packageAmount), packageUnit: unit(p.packageUnit),
       unitsPerPack: numeric(p.unitsPerPack, 1, 100, true), nutrition: nutrition(p.nutrition),
-      provenance: { status: expected, source: text(provenance.source, 1000) },
+      provenance: { status: expected, source: text(provenance.source, 1000, true) },
     } as Product
     const values = nutrition(row.nutrition), rawSources = record(row.nutritionSources)
     const nutritionSources = Object.fromEntries(nutrientKeys.map(key => {

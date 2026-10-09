@@ -135,6 +135,15 @@ begin
   perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,imagePath}','"../other/image.webp"')) is false,'image traversal rejected');
   perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,imagePath}','"40000000-0000-4000-8000-000000000001.webp"')) is true,'controlled image path accepted');
   perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,departmentName}','"A\nB"')) is false,'control characters rejected');
+  perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,departmentName}',to_jsonb(repeat('a',120)||' / '||repeat('b',120)))) is true,'full store and shelf names fit department name');
+  perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,departmentName}',to_jsonb(repeat('a',244)))) is false,'department name bounded to 243');
+  foreach k in array array['ingredients','allergens'] loop
+    perform public.test_assert(public.valid_list_entries(jsonb_set(sample,array['0','product',k],to_jsonb(E'Line one\tvalue\nLine two\r\nLine three'::text))) is true,'multiline label accepted '||k);
+    perform public.test_assert(public.valid_list_entries(jsonb_set(sample,array['0','product',k],to_jsonb('Text'||chr(11)||'Text'))) is false,'vertical tab rejected '||k);
+    perform public.test_assert(public.valid_list_entries(jsonb_set(sample,array['0','product',k],to_jsonb(E'\t\r\n'::text))) is false,'whitespace-only label rejected '||k);
+  end loop;
+  perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,provenance,source}',to_jsonb(E'Source\t2026\nLabel\r\nVerified text'::text))) is true,'multiline provenance accepted');
+  perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,provenance,source}',to_jsonb('Source'||chr(12)||'Text'))) is false,'form feed provenance rejected');
   perform public.test_assert(public.valid_list_entries(jsonb_set(sample,'{0,product,name}',to_jsonb(repeat('a',201)))) is false,'bounded product text');
   select jsonb_agg(sample->0) into bad from generate_series(1,31);
   perform public.test_assert(public.valid_list_entries(bad) is false,'maximum thirty variants');
@@ -151,6 +160,13 @@ with changed as (update public.profiles set display_name='Intruder' returning us
 with removed as (delete from public.saved_lists returning id) select public.test_assert((select count(*)=0 from removed),'other list delete blocked');
 
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000003';
+select public.test_denied($q$update public.products set source=E' \t\r\n' where status='published'$q$);
+select public.test_denied($q$update public.products set ingredients='Text'||chr(11)||'Text'$q$);
+select public.test_denied($q$update public.products set allergens='Text'||chr(12)||'Text'$q$);
+select public.test_denied($q$update public.products set source='Text'||chr(1)||'Text'$q$);
+update public.products set ingredients=E'Ingredient one\nIngredient two',allergens=E'Milk\tEggs',source=E'Label\n2026\r\nSource'
+where id='30000000-0000-4000-8000-000000000001';
+select public.test_assert((select ingredients=E'Ingredient one\nIngredient two' and allergens=E'Milk\tEggs' and source=E'Label\n2026\r\nSource' from public.products where id='30000000-0000-4000-8000-000000000001'),'catalog preserves permitted label whitespace');
 select public.test_assert((select count(*)=0 from public.profiles),'admin cannot read player profile/body');
 select public.test_assert((select count(*)=0 from public.saved_lists),'admin cannot read player lists');
 with modified as (update public.profiles set display_name='Admin change' returning user_id) select public.test_assert((select count(*)=0 from modified),'admin cannot update player body/profile');
@@ -179,6 +195,6 @@ select public.test_assert((select count(*)=0 from public.profiles),'account dele
 select public.test_assert((select count(*)=0 from public.saved_lists),'account delete cascades lists');
 delete from auth.users where id='00000000-0000-4000-8000-000000000003';
 select public.test_assert((select count(*)=0 from private.admin_users),'account delete cascades admin assignment');
-select public.test_assert((select count(*)=11 from public.catalog_audit),'account deletion preserves catalog history');
+select public.test_assert((select count(*)=12 from public.catalog_audit),'account deletion preserves catalog history');
 select public.test_assert((select bool_and(actor_id is null) from public.catalog_audit),'account deletion anonymizes audit actor');
 rollback;

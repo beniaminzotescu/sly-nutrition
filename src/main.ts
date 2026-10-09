@@ -533,6 +533,15 @@ document.querySelector('#finalize-list')!.addEventListener('click', () => {
       readCart: () => structuredClone(cart),
       loadCart: next => commitCart(next),
       body: () => ownBody,
+      clearBody: () => {
+        ownBody = undefined
+        savedBody = undefined
+        if (reference?.mode === 'own') {
+          reference = { mode: 'educational', goal: 'explore' }
+          document.querySelector('#session-summary')!.textContent = 'Explorare educațională · datele corporale au fost șterse.'
+        }
+        renderCart()
+      },
       savedBody: next => { savedBody = next },
       readProgress: () => ({ completed: [...completed], color: avatarColor }),
       restoreProgress: (nextCompleted, color) => { completed = [...nextCompleted]; avatarColor = color; game.setAvatarColor(color) },

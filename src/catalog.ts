@@ -15,6 +15,7 @@ type ProductBase = {
   nutrition: Nutrition
   departmentName?: string
   imageUrl?: string
+  imagePath?: string
   ingredients?: string | null
   allergens?: string | null
 }

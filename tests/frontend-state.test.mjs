@@ -13,7 +13,7 @@ registerHooks({
 const { retailerCatalog, demoCatalog } = await import('../src/catalog.ts')
 const { productEntry, addPackage, returnPackage } = await import('../src/cart-actions.ts')
 const { validateShoppingEntries } = await import('../src/snapshot-validation.ts')
-const { shoppingTotals, shoppingText } = await import('../src/shopping-list.ts')
+const { shoppingTotals, shoppingText, shoppingKey } = await import('../src/shopping-list.ts')
 const { estimateAdult, moderateReference } = await import('../src/nutrition.ts')
 const { shelfCoordinates, canTraverse, roomBottom } = await import('../src/catalog-layout.ts')
 
@@ -33,9 +33,20 @@ assert.equal(returnPackage(original, 0.5), undefined)
 const added = addPackage(original, product)
 assert.equal(added[0].quantity, 4)
 assert.deepEqual(original, before)
+const reconstructed = validateShoppingEntries(original)
+assert.equal(reconstructed[0].key, original[0].key)
+const reordered = structuredClone(original[0])
+reordered.product = Object.fromEntries(Object.entries(reordered.product).reverse())
+reordered.product.nutrition = Object.fromEntries(Object.entries(reordered.product.nutrition).reverse())
+reordered.product.provenance = Object.fromEntries(Object.entries(reordered.product.provenance).reverse())
+assert.equal(shoppingKey(reordered), original[0].key)
+const merged = addPackage(reconstructed, product)
+assert.equal(merged.length, 1)
+assert.equal(merged[0].quantity, 4)
 const capped = [productEntry(product)]
 capped[0].quantity = 99
 assert.equal(addPackage(capped, product), undefined)
+assert.equal(addPackage(validateShoppingEntries(capped), product), undefined)
 const all = retailerCatalog.map(productEntry)
 for (const entry of all) entry.quantity = 99
 all.push(...demoCatalog.map(productEntry))
@@ -55,6 +66,11 @@ const changes = [
   entries => { entries[0].product.name = 'x'.repeat(201) },
   entries => { entries[0].amountSource = 'unknown' },
   entries => { entries[0].product.portion = 7 },
+  entries => { entries[0].product.imagePath = '../external.png' },
+  entries => { entries[0].product.imagePath = 'https://external.example/photo.png' },
+  entries => { entries[0].product.name = 'Nume\nprodus' },
+  entries => { entries[0].product.provenance.source = 'Etichetă\u0000invalidă' },
+  entries => { entries[0].product.departmentName = 'x'.repeat(244) },
 ]
 for (const change of changes) {
   const invalid = structuredClone(original)
@@ -66,8 +82,24 @@ assert.throws(() => validateShoppingEntries(Array(31).fill(original[0])))
 const snapshot = validateShoppingEntries(original)
 snapshot[0].product.departmentName = 'Magazin din snapshot / Raft nou'
 snapshot[0].product.imageUrl = 'https://unapproved.example/image'
+snapshot[0].product.imagePath = '00000000-0000-4000-8000-000000000001.webp'
 const loaded = validateShoppingEntries(snapshot)
 assert.equal(loaded[0].product.imageUrl, undefined)
+assert.equal(loaded[0].product.imagePath, snapshot[0].product.imagePath)
+const stableKey = shoppingKey(snapshot[0])
+snapshot[0].product.imageUrl = 'https://another.example/signed?token=changed'
+assert.equal(shoppingKey(snapshot[0]), stableKey)
+assert.doesNotMatch(stableKey, /unapproved\.example|another\.example|token=/)
+const multiline = structuredClone(loaded)
+multiline[0].product.departmentName = `${'M'.repeat(120)} / ${'R'.repeat(120)}`
+multiline[0].product.ingredients = 'Ovăz\nApă\r\nSare\t0,1 g'
+multiline[0].product.allergens = 'Gluten\nPoate conține lapte'
+multiline[0].product.provenance.source = 'Etichetă consultată:\n9 octombrie 2026'
+const preserved = validateShoppingEntries(multiline)
+assert.equal(preserved[0].product.departmentName.length, 243)
+assert.equal(preserved[0].product.ingredients, multiline[0].product.ingredients)
+assert.equal(preserved[0].product.allergens, multiline[0].product.allergens)
+assert.equal(preserved[0].product.provenance.source, multiline[0].product.provenance.source)
 assert.equal(loaded[0].nutrition.calories, null)
 assert.match(shoppingText(loaded), /MAGAZIN DIN SNAPSHOT \/ RAFT NOU/)
 assert.match(shoppingText(loaded), /necunoscut/)

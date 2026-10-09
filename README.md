@@ -22,6 +22,8 @@ node --test /home/runner/work/sly-nutrition/sly-nutrition/supabase/tests/auth-bo
 
 These cover cart/snapshot invariants and mocked authentication boundaries, not hosted end-to-end behavior. Database authorization regressions use native SQL as described below.
 
+An optional browser regression exercises consent withdrawal through the real account and game interfaces with mocked cloud responses. From the repository root, run `node /home/runner/work/sly-nutrition/sly-nutrition/tests/connected-consent.test.mjs` with Chromium installed (`CHROMIUM_PATH` overrides `/usr/bin/chromium`). It uses local ports 5196 and 9236 and requires Node.js 24.
+
 ## Connected and demonstration modes
 
 The Supabase project is external infrastructure: installing the application does not create a database, provision an administrator, send email, configure Google, or deploy account deletion automatically. Without configuration, the application offers an explicitly labelled local demonstration, not a simulated authenticated account or a locally trusted administrator.

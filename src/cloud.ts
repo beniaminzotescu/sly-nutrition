@@ -47,6 +47,7 @@ export const cloud = {
 }
 let activeSession: Session | null = null
 let generation = 0
+let profileWriteQueue: Promise<void> = Promise.resolve()
 let recoveryUser: string | null = null
 const listeners = new Set<(session: Session | null, event: AuthChangeEvent) => void>()
 let readyResolve: () => void
@@ -173,8 +174,27 @@ export async function getProfile(): Promise<ProfileRow | null> {
   current.check()
   return data as unknown as ProfileRow | null
 }
-export async function saveProfile(fields: Partial<Omit<ProfileRow, 'user_id'>>): Promise<ProfileRow> {
+export function saveProfile(fields: Partial<Omit<ProfileRow, 'user_id'>>): Promise<ProfileRow> {
+  const expectedUserId = activeSession?.user.id
+  const expectedGeneration = generation
+  const snapshot = structuredClone(fields)
+  const write = () => {
+    if (!expectedUserId || expectedGeneration !== generation || activeSession?.user.id !== expectedUserId) {
+      throw new Error('Contul s-a schimbat înainte de salvare. Reîncearcă din contul corect.')
+    }
+    return writeProfile(snapshot, expectedUserId, expectedGeneration)
+  }
+  // Request the cross-tab lock at invocation time, not after an awaited local queue.
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(`sly-profile-write:${config.url}:${expectedUserId ?? 'signed-out'}`, write)
+  }
+  const pending = profileWriteQueue.then(write, write)
+  profileWriteQueue = pending.then(() => undefined, () => undefined)
+  return pending
+}
+async function writeProfile(fields: Partial<Omit<ProfileRow, 'user_id'>>, expectedUserId: string, expectedGeneration: number): Promise<ProfileRow> {
   const current = await account()
+  if (current.id !== expectedUserId || generation !== expectedGeneration) throw new Error('Contul s-a schimbat înainte de salvare. Reîncearcă din contul corect.')
   const allowed: Partial<ProfileRow> = {}
   for (const key of ['display_name', 'avatar_color', 'progress', 'body_profile', 'body_consent_at'] as const) {
     if (fields[key] !== undefined) Object.assign(allowed, { [key]: fields[key] })
@@ -183,7 +203,8 @@ export async function saveProfile(fields: Partial<Omit<ProfileRow, 'user_id'>>):
     allowed.body_profile = null
     allowed.body_consent_at = null
   }
-  const data = unwrap(await client().from('profiles').upsert({ ...allowed, user_id: current.id }, { onConflict: 'user_id', defaultToNull: false }).select().single())
+  const data = unwrap(await client().from('profiles').upsert({ ...allowed, user_id: current.id }, { onConflict: 'user_id', defaultToNull: false })
+    .select().single().setHeader('Authorization', ['Bearer', current.accessToken].join(' ')))
   current.check()
   return data as unknown as ProfileRow
 }

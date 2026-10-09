@@ -225,7 +225,7 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
     },
     setAvatarColor(color: string) {
       storeScene?.setAvatarColor(color)
-      document.querySelector<HTMLElement>('.avatar-body')!.style.backgroundColor = ({ clay: '#db8c51', leaf: '#83a36a', milk: '#cfdfed' } as Record<string, string>)[color] ?? '#db8c51'
+      document.querySelector<HTMLElement>('.avatar-body')!.style.backgroundColor = ({ clay: '#db8c51', leaf: '#83a36a', milk: '#cfdfed', grain: '#cdb071' } as Record<string, string>)[color] ?? '#db8c51'
     },
     enter() {
       entered = true

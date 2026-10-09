@@ -16,6 +16,7 @@ export type ConnectedBridge = {
   readCart: () => ShoppingEntry[]
   loadCart: (entries: ShoppingEntry[]) => void
   body: () => OnboardingBody | undefined
+  clearBody: () => void
   savedBody: (body: OnboardingBody | undefined) => void
   readProgress: () => { completed: string[]; color: string }
   restoreProgress: (completed: string[], color: string) => void
@@ -27,7 +28,7 @@ export type ConnectedBridge = {
 }
 const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
 const message = (error: unknown) => error instanceof Error ? error.message : 'Conexiunea nu a confirmat operațiunea. Reîncearcă.'
-const colors = ['clay', 'leaf', 'milk']
+const colors = ['clay', 'leaf', 'milk', 'grain']
 const missions = ['inspect', 'compare', 'review']
 function validBody(profile: ProfileRow | null): OnboardingBody | undefined {
   const body = profile?.body_profile
@@ -48,6 +49,7 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
   let cleanupAuth: (() => void) | undefined
   let cleanupUtility: (() => void) | undefined
   let profile: ProfileRow | null = null
+  let profileHydrated = false
   let progressQueue = Promise.resolve()
   const adminButton = document.querySelector<HTMLButtonElement>('#admin-open')!
   function status(text: string) {
@@ -117,6 +119,7 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
         name: product.name, group: product.group_name, color: ['grain', 'leaf', 'clay', 'milk'].includes(product.color) ? product.color : 'grain',
         shape: product.shape, portion: product.portion, packageAmount: product.package_amount, packageUnit: product.package_unit,
         unitsPerPack: product.units_per_pack, nutrition: { ...product.nutrition }, imageUrl,
+        ...(product.image_path ? { imagePath: product.image_path } : {}),
         ingredients: product.ingredients, allergens: product.allergens,
         readiness: product.label_verified ? 'approved' as const : 'requested' as const,
         provenance: { status: product.label_verified ? 'verified-label' as const : 'pending-label' as const, source: product.source },
@@ -126,21 +129,34 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
     bridge.catalog(departments, products)
     document.querySelector('#connection-label')!.textContent = `CONECTAT · ${store?.name ?? 'niciun magazin publicat'}`
   }
+  async function hydrateProfile(version: number) {
+    try {
+      const loaded = await getProfile()
+      if (version !== generation || !admitted) return false
+      profile = loaded
+      profileHydrated = true
+      const remoteCompleted = loaded?.progress?.completed?.filter(item => missions.includes(item)) ?? []
+      const completed = [...new Set([...remoteCompleted, ...bridge.readProgress().completed.filter(item => missions.includes(item))])]
+      const color = colors.includes(loaded?.avatar_color ?? '') ? loaded!.avatar_color : 'clay'
+      bridge.restoreProgress(completed, color)
+      bridge.savedBody(validBody(loaded))
+      return true
+    } catch {
+      if (version === generation) profileHydrated = false
+      return false
+    }
+  }
   async function admit() {
     const version = generation
     admitted = true
     bridge.entry.innerHTML = '<h2>Pregătim profilul…</h2><p>Încărcăm numai datele salvate în cont. Măsurătorile rămân opționale.</p>'
     void reloadCatalog()
     try {
-      const [nextProfile, role] = await Promise.all([getProfile(), getRole()])
+      const [loaded, role] = await Promise.all([hydrateProfile(version), getRole().catch(() => null)])
       if (version !== generation || !admitted) return
-      profile = nextProfile
       admin = role === 'admin'
       adminButton.hidden = !admin
-      const completed = profile?.progress?.completed?.filter(item => missions.includes(item)) ?? []
-      const color = colors.includes(profile?.avatar_color ?? '') ? profile!.avatar_color : 'clay'
-      bridge.restoreProgress(completed, color)
-      bridge.savedBody(validBody(profile))
+      if (!loaded) document.querySelector('#connection-label')!.textContent = 'Profil indisponibil · progresul cloud este protejat; reîncearcă din Profil'
     } catch {
       if (version === generation) {
         adminButton.hidden = true
@@ -208,23 +224,75 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
     bridge.utility.innerHTML = `<div id="account-auth"></div><section class="notice"><h3>Măsurători opționale</h3><p>Estimările și IMC nu se salvează. Numai măsurătorile proprii confirmate în profil pot fi salvate, exclusiv cu acordul de mai jos.</p><label><input type="checkbox" id="body-consent">Sunt de acord să salvez măsurătorile mele în cont</label><button class="button" id="save-body" disabled>Salvează măsurătorile</button><p data-cloud-status role="status"></p></section><button class="button" id="redo-onboarding">Schimbă profilul educațional (golește lista locală)</button>`
     const root = bridge.utility.querySelector<HTMLElement>('#account-auth')!
     cleanupUtility = mountAuth(root)
-    root.addEventListener('body-profile-cleared', () => { profile = profile ? { ...profile, body_profile: null, body_consent_at: null } : null; bridge.savedBody(undefined) })
+    if (!profileHydrated) {
+      const notice = document.createElement('p')
+      notice.className = 'notice'
+      notice.textContent = 'Profilul nu a putut fi încărcat. Descoperirile rămân în sesiune; nu suprascriem progresul sau culoarea din cont.'
+      const retry = document.createElement('button')
+      retry.className = 'button'
+      retry.dataset.retryProfile = ''
+      retry.textContent = 'Reîncearcă încărcarea profilului'
+      retry.addEventListener('click', async () => {
+        retry.disabled = true
+        const version = generation, view = utilityGeneration
+        const loaded = await hydrateProfile(version)
+        if (version !== generation || view !== utilityGeneration) return
+        if (loaded) {
+          saveProgress()
+          showUtility('profile')
+        } else {
+          retry.disabled = false
+          notice.textContent = 'Profilul este încă indisponibil. Progresul din cont nu a fost modificat; poți reîncerca.'
+        }
+      })
+      notice.append(retry)
+      bridge.utility.prepend(notice)
+    }
+    let bodyGeneration = 0
+    let bodySaving = false
     const checkbox = bridge.utility.querySelector<HTMLInputElement>('#body-consent')!
     const button = bridge.utility.querySelector<HTMLButtonElement>('#save-body')!
-    checkbox.addEventListener('change', () => { button.disabled = !checkbox.checked || !bridge.body() })
+    const cleared = () => {
+      bodyGeneration++
+      profile = profile ? { ...profile, body_profile: null, body_consent_at: null } : null
+      bridge.savedBody(undefined)
+      bridge.clearBody()
+      checkbox.checked = false
+      button.disabled = true
+      status('Datele corporale au fost șterse din cont și din sesiunea curentă.')
+    }
+    root.addEventListener('body-profile-cleared', cleared)
+    root.addEventListener('body-consent-revoked', cleared)
+    root.addEventListener('click', event => {
+      if ((event.target as Element).closest('[data-forget]')) {
+        checkbox.disabled = true
+        button.disabled = true
+      }
+    }, true)
+    checkbox.addEventListener('change', () => { button.disabled = bodySaving || !checkbox.checked || !bridge.body() })
     if (!bridge.body()) status('Alege opțional Date proprii în profil înainte de salvare. Modul educațional nu salvează măsurători.')
     button.addEventListener('click', () => {
-      const body = bridge.body(), version = generation, view = utilityGeneration
-      if (!body || !checkbox.checked) return
+      const body = bridge.body(), version = generation, view = utilityGeneration, bodyVersion = bodyGeneration
+      if (!body || !checkbox.checked || bodySaving) return
+      bodySaving = true
+      checkbox.disabled = true
+      const forget = root.querySelector<HTMLButtonElement>('[data-forget]')
+      if (forget) forget.disabled = true
       button.disabled = true
       status('Se salvează…')
       void saveProfile({ body_profile: body, body_consent_at: new Date().toISOString() }).then(saved => {
-        if (version !== generation || view !== utilityGeneration) return
+        if (version !== generation || view !== utilityGeneration || bodyVersion !== bodyGeneration) return
         profile = saved
         bridge.savedBody(validBody(saved))
         checkbox.checked = false
         status('Măsurătorile au fost salvate cu acordul tău. Le poți șterge oricând.')
-      }).catch(error => { if (version === generation && view === utilityGeneration) { status(message(error)); button.disabled = false } })
+      }).catch(error => { if (version === generation && view === utilityGeneration && bodyVersion === bodyGeneration) { status(message(error)); button.disabled = false } })
+        .finally(() => {
+          if (version !== generation || view !== utilityGeneration || bodyVersion !== bodyGeneration) return
+          bodySaving = false
+          checkbox.disabled = false
+          if (forget?.isConnected) forget.disabled = false
+        })
     })
     bridge.utility.querySelector('#redo-onboarding')!.addEventListener('click', () => {
       bridge.reset()
@@ -240,6 +308,7 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
       if (version !== generation || view !== utilityGeneration) return
       bridge.utility.innerHTML = `<h2>Liste reutilizabile</h2><p>Salvăm o copie a etichetelor și cantităților, nu un meniu. Actualizările catalogului nu schimbă listele deja salvate.</p><form id="save-list"><label>Numele listei<input name="name" maxlength="80" required placeholder="Cumpărăturile săptămânii"></label><button class="button primary" type="submit" ${bridge.readCart().length ? '' : 'disabled'}>Salvează lista curentă</button></form><p data-cloud-status role="status"></p><div id="saved-rows"></div>`
       const rows = bridge.utility.querySelector('#saved-rows')!
+      let snapshotLoad = 0
       async function run(action: () => Promise<unknown>, done: string) {
         bridge.utility.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = true })
         status('Se procesează…')
@@ -273,11 +342,20 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
           button.addEventListener('click', callback); article.append(button)
         }
         action('Încarcă (înlocuiește căruciorul)', () => {
-          try {
+          const request = ++snapshotLoad
+          status('Se încarcă lista și imaginile aprobate…')
+          void (async () => {
             const entries = validateShoppingEntries(list.entries)
+            await Promise.all(entries.map(async entry => {
+              if (!entry.product.imagePath) return
+              try {
+                entry.product.imageUrl = approvedImage(await signedProductImage(entry.product.imagePath))
+              } catch { /* Archived or unavailable images remain honest placeholders. */ }
+            }))
+            if (version !== generation || view !== utilityGeneration || request !== snapshotLoad || !admitted) return
             bridge.loadCart(entries)
             status('Snapshot încărcat. Poți anula înlocuirea din cărucior.')
-          } catch (error) { status(message(error)) }
+          })().catch(error => { if (version === generation && view === utilityGeneration) status(message(error)) })
         })
         action('Duplică', () => { void run(() => saveList(`${list.name.slice(0, 70)} · copie`, validateShoppingEntries(list.entries)), 'Copia a fost salvată.') })
         action('Șterge', () => {
@@ -306,10 +384,14 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
   })
   function saveProgress() {
     if (!admitted) return
+    if (!profileHydrated) {
+      document.querySelector('#connection-label')!.textContent = 'Progres numai în sesiune · reîncarcă profilul înainte de salvare'
+      return
+    }
     const version = generation
     const progress = bridge.readProgress()
     progressQueue = progressQueue.catch(() => {}).then(async () => {
-      if (version !== generation || !admitted) return
+      if (version !== generation || !admitted || !profileHydrated) return
       try {
         const saved = await saveProfile({ avatar_color: progress.color, progress: { level: progress.completed.length + 1, completed: progress.completed } })
         if (version === generation) profile = saved
@@ -326,7 +408,7 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
     if (session?.user.id === userId && event !== 'INITIAL_SESSION' && event !== 'SIGNED_OUT' && event !== 'PASSWORD_RECOVERY') return
     generation++; storeGeneration++
     cleanup()
-    admitted = false; admin = false; profile = null
+    admitted = false; admin = false; profile = null; profileHydrated = false
     catalog = { stores: [], shelves: [], products: [] }
     selectedStore = ''
     document.querySelector('#store-selector')!.replaceChildren()

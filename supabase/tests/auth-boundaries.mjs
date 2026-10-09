@@ -21,12 +21,13 @@ function storage() {
     keys: () => [...values.keys()],
   }
 }
-function loadCloud(shared, factory) {
+function loadCloud(shared, factory, extra = {}) {
   const context = {
-    exports: {}, URL, atob,
+    exports: {}, URL, atob, structuredClone,
     window: { localStorage: shared, location: { origin: 'https://game.example' } },
     __env: { BASE_URL: '/', VITE_SUPABASE_URL: 'https://project.example', VITE_SUPABASE_ANON_KEY: publicKey },
     require: name => name === '@supabase/supabase-js' ? { createClient: factory } : { validateShoppingEntries: value => value },
+    ...extra,
   }
   vm.runInNewContext(compiled, context)
   return context.exports
@@ -145,4 +146,144 @@ test('blocked persistent auth storage disables accounts rather than falling back
   const app = loadCloud(blocked, () => { throw new Error('Must not initialize SDK') })
   assert.equal(app.cloud.configured, false)
   assert.match(app.cloud.configurationError, /Stocarea browserului/)
+})
+
+test('profile writes serialize delayed body save before revoke and clone the initiating values', async () => {
+  const shared = storage()
+  let callback
+  let releaseBodySave
+  const writes = []
+  let profile = { user_id: 'A', body_profile: null, body_consent_at: null }
+  const session = { user: { id: 'A' }, access_token: 'token-A' }
+  const factory = () => ({
+    auth: {
+      onAuthStateChange(listener) { callback = listener; queueMicrotask(() => callback('INITIAL_SESSION', session)) },
+      getSession: async () => ({ data: { session }, error: null }),
+    },
+    from: () => ({
+      upsert(fields) {
+        const query = {
+          select() { return this },
+          single() { return this },
+          setHeader(name, value) {
+            assert.equal(name, 'Authorization')
+            assert.equal(value, ['Bearer', 'token-A'].join(' '))
+            writes.push(fields)
+            const commit = () => {
+              profile = { ...profile, ...fields }
+              return { data: { ...profile }, error: null }
+            }
+            if (fields.body_profile) return new Promise(resolve => { releaseBodySave = () => resolve(commit()) })
+            return Promise.resolve(commit())
+          },
+        }
+        return query
+      },
+    }),
+  })
+  const app = loadCloud(shared, factory)
+  await tick()
+  const body = { age: 30, height: 170, weight: 70, coefficient: 5, activity: 1.2 }
+  const saving = app.saveProfile({ body_profile: body, body_consent_at: '2026-10-09T12:00:00Z' })
+  body.weight = 99
+  await tick()
+  const revoking = app.saveProfile({ body_profile: null, body_consent_at: null })
+  await tick()
+  assert.equal(writes.length, 1, 'reopened modal cannot send revoke ahead of pending save')
+  assert.equal(writes[0].body_profile.weight, 70, 'queued write captured a deep snapshot')
+  releaseBodySave()
+  await Promise.all([saving, revoking])
+  assert.equal(writes.length, 2)
+  assert.equal(profile.body_profile, null)
+  assert.equal(profile.body_consent_at, null)
+})
+
+test('queued profile writes from an old account are rejected after an account switch', async () => {
+  const shared = storage()
+  let callback
+  let releaseFirst
+  let session = { user: { id: 'A' }, access_token: 'token-A' }
+  const writes = []
+  const factory = () => ({
+    auth: {
+      onAuthStateChange(listener) { callback = listener; queueMicrotask(() => callback('INITIAL_SESSION', session)) },
+      getSession: async () => ({ data: { session }, error: null }),
+    },
+    from: () => ({
+      upsert(fields) {
+        return {
+          select() { return this }, single() { return this },
+          setHeader() {
+            writes.push(fields)
+            return new Promise(resolve => { releaseFirst = () => resolve({ data: fields, error: null }) })
+          },
+        }
+      },
+    }),
+  })
+  const app = loadCloud(shared, factory)
+  await tick()
+  const first = app.saveProfile({ display_name: 'Old account' })
+  const firstRejected = assert.rejects(first, /Contul s-a schimbat/)
+  await tick()
+  const queued = app.saveProfile({ body_profile: null, body_consent_at: null })
+  const queuedRejected = assert.rejects(queued, /Contul s-a schimbat/)
+  session = { user: { id: 'B' }, access_token: 'token-B' }
+  callback('SIGNED_IN', session)
+  releaseFirst()
+  await Promise.all([firstRejected, queuedRejected])
+  assert.equal(writes.length, 1, 'stale queued operation never reaches the database')
+  assert.equal(writes[0].user_id, 'A')
+})
+
+test('Web Locks are requested immediately and serialize save then revoke across two tabs', async () => {
+  const shared = storage()
+  const lockNames = []
+  let tail = Promise.resolve()
+  const locks = {
+    request(name, action) {
+      lockNames.push(name)
+      const pending = tail.then(action)
+      tail = pending.then(() => undefined, () => undefined)
+      return pending
+    },
+  }
+  let releaseSave
+  let body = null
+  const writes = []
+  const session = { user: { id: 'A' }, access_token: 'token-A' }
+  const factory = () => ({
+    auth: {
+      onAuthStateChange(listener) { queueMicrotask(() => listener('INITIAL_SESSION', session)) },
+      getSession: async () => ({ data: { session }, error: null }),
+    },
+    from: () => ({
+      upsert(fields) {
+        return {
+          select() { return this }, single() { return this },
+          setHeader() {
+            writes.push(fields)
+            if (fields.body_profile) return new Promise(resolve => {
+              releaseSave = () => { body = fields.body_profile; resolve({ data: fields, error: null }) }
+            })
+            body = null
+            return Promise.resolve({ data: fields, error: null })
+          },
+        }
+      },
+    }),
+  })
+  const first = loadCloud(shared, factory, { navigator: { locks } })
+  const second = loadCloud(shared, factory, { navigator: { locks } })
+  await tick()
+  const saving = first.saveProfile({ body_profile: { age: 30, height: 170, weight: 70, coefficient: 5, activity: 1.2 }, body_consent_at: '2026-10-09T12:00:00Z' })
+  const revoking = second.saveProfile({ body_profile: null, body_consent_at: null })
+  assert.equal(lockNames.length, 2, 'both locks requested synchronously at invocation')
+  assert.equal(lockNames[0], lockNames[1], 'same project/account shares a lock')
+  await tick()
+  assert.equal(writes.length, 1)
+  releaseSave()
+  await Promise.all([saving, revoking])
+  assert.equal(writes.length, 2)
+  assert.equal(body, null)
 })
