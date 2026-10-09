@@ -262,7 +262,6 @@ export function mountConnectedGame(bridge: ConnectedBridge) {
       status('Datele corporale au fost șterse din cont și din sesiunea curentă.')
     }
     root.addEventListener('body-profile-cleared', cleared)
-    root.addEventListener('body-consent-revoked', cleared)
     root.addEventListener('click', event => {
       if ((event.target as Element).closest('[data-forget]')) {
         checkbox.disabled = true

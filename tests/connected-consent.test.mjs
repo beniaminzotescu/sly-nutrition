@@ -31,7 +31,7 @@ const scenario=window.consentScenario;
 let profile=scenario==='new-profile'?null:{user_id:session.user.id,display_name:'Explorator',avatar_color:scenario?.endsWith('grain')?'grain':scenario?'milk':'clay',progress:scenario?{level:3,completed:['inspect','compare']}:{level:1,completed:[]},body_profile:null,body_consent_at:null};
 export function watchSession(fn){let active=true;queueMicrotask(()=>{if(active)fn(session,'INITIAL_SESSION')});return()=>{active=false}}
 export async function getProfile(){if(window.consentMock.failProfile)throw Error('Mock profile unavailable');return structuredClone(profile)}
-export async function saveProfile(fields){window.consentMock.writes.push(structuredClone(fields));profile={...profile,...fields};if(fields.body_profile===null||fields.body_consent_at===null){profile.body_profile=null;profile.body_consent_at=null}return structuredClone(profile)}
+export async function saveProfile(fields){if(window.consentMock.failRevoke&&(fields.body_profile===null||fields.body_consent_at===null))throw Error('Mock revoke unavailable');window.consentMock.writes.push(structuredClone(fields));profile={...profile,...fields};if(fields.body_profile===null||fields.body_consent_at===null){profile.body_profile=null;profile.body_consent_at=null}return structuredClone(profile)}
 window.consentMock={getProfile,writes:[],failProfile:scenario?.startsWith('profile-failure'),failRole:scenario==='role-failure'};
 export async function getRole(){if(window.consentMock.failRole)throw Error('Mock role unavailable');return 'player'}
 export async function listPublishedCatalog(){return {stores:[],shelves:[],products:[]}}
@@ -120,6 +120,17 @@ try {
   await evaluate(`document.querySelector('[name=goal][value=maintenance]').checked=true;document.querySelector('#goal-form').requestSubmit()`)
   await click('[data-hud="profile"]')
   await until(`!!document.querySelector('[data-forget]')`)
+  await evaluate(`consentMock.failRevoke=true`)
+  await click('[data-forget]')
+  await until(`document.querySelector('[data-auth-status]').textContent.includes('Mock revoke unavailable')`)
+  assert.equal(await evaluate(`consentMock.getProfile().then(profile=>profile.body_profile.age)`), 42)
+  assert.match(await evaluate(`document.querySelector('#cart-reference').textContent`), /Reper orientativ/)
+  await click('#utility-dialog .close-button')
+  await click('[data-hud="profile"]')
+  await until(`!!document.querySelector('[data-forget]')`)
+  await click('#body-consent')
+  assert.equal(await evaluate(`document.querySelector('#save-body').disabled`), false)
+  await evaluate(`consentMock.failRevoke=false`)
   await click('[data-forget]')
   await until(`document.querySelector('[data-cloud-status]').textContent.includes('șterse din cont')`)
   assert.equal(await evaluate(`consentMock.getProfile().then(profile=>profile.body_profile)`), null)
