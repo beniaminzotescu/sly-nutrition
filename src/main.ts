@@ -1,473 +1,343 @@
 import './style.css'
-import { StoreScene } from './store-scene'
+import { departments, demoCatalog, retailerCatalog, type Department, type Nutrition, type Product } from './catalog'
+import { createGame } from './game'
+import { mountOnboarding } from './onboarding'
+import { format, type Reference } from './nutrition'
+import { demoNotice, shoppingGroups, shoppingKey, shoppingNotice, shoppingText, shoppingTotals, type ShoppingEntry } from './shopping-list'
 
-type Product = {
-  id: string
-  name: string
-  flavor: string
-  color: string
-  number: string
-  calories: number
-  sugar: number
-  x: number
-}
-type CartEntry = {
-  key: string
-  product: Product
-  portion: number
-  calories: number
-  sugar: number
-  quantity: number
-}
-
-const products: Product[] = [
-  { id: 'cacao', name: 'Cacao', flavor: 'COCOA', color: 'cocoa', number: '01', calories: 460, sugar: 8, x: 110 },
-  { id: 'vanilie', name: 'Vanilie', flavor: 'VANILLA', color: 'vanilla', number: '02', calories: 480, sugar: 10, x: 400 },
-  { id: 'alune', name: 'Alune', flavor: 'HAZELNUT', color: 'hazelnut', number: '03', calories: 510, sugar: 12, x: 690 },
-]
-const format = (value: number) => new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 1 }).format(value)
-const pack = (p: Product) => `
-  <div class="pack ${p.color}" aria-hidden="true">
-    <div class="pack-seal top"></div>
-    <div class="pack-inner">
-      <span class="pack-brand">sly<span>nutrition</span></span>
-      <span class="pack-label">UN MOMENT.<br>DE CURIOSITATE.</span>
-      <span class="pack-flavor">${p.flavor}</span>
-      <span class="pack-type">NAPOLITANĂ · CONCEPT VIZUAL</span>
-      <div class="wafer"></div>
-      <span class="pack-bottom">AMBALAJ DEMO <b>20 g</b></span>
-    </div><div class="pack-seal bottom"></div>
-  </div>`
-const miniPack = (p: Product) => `<span class="mini-pack ${p.color}" aria-hidden="true"><b>sly</b><i></i></span>`
-
+const miniPack = (product: Product) => `<span class="mini-pack ${product.color}" aria-hidden="true">✳</span>`
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <a class="skip-link" href="#product-shortcuts">Sari la produse, fără deplasare</a>
-  <header class="header">
-    <a class="logo" href="./" aria-label="SLY Nutrition, reîncepe">sly<span>NUTRITION</span><i></i></a>
-    <div class="header-divider"></div><span class="header-label">THE LITTLE STORE</span>
-    <span class="session-badge"><i></i> Un joc de explorat, nu de cumpărat</span>
-  </header>
-  <main id="main">
-    <section class="intro" aria-labelledby="store-title">
-      <div><div class="eyebrow">SLY UNIVERSE / MAGAZIN VIRTUAL</div><h1 id="store-title">La raft, <em>în ritmul tău.</em></h1></div>
-      <p>Plimbă-te. Întoarce ambalajul. Descoperă porția.<br>În cărucior aduni <strong>kcal, nu prețuri.</strong></p>
-    </section>
-    <div class="store-layout">
-      <section class="store-panel" aria-label="Explorează magazinul">
-        <div class="store-topline"><span><i class="status-dot"></i> LITTLE STORE — 01</span><span>MAGAZIN 3D · 3 GUSTURI</span></div>
-        <div class="scene-viewport">
-          <div class="scene-3d" id="scene-mount" aria-hidden="true"></div>
-          <div id="store-world" class="store-world" tabindex="0" role="region" aria-label="Magazin. Deplasează-te cu săgețile sau WASD. Apasă E lângă un raft pentru a inspecta." aria-describedby="movement-help">
-            <div class="back-wall" aria-hidden="true"><div class="wall-brand">sly<span>THE LITTLE STORE</span></div><div class="wall-message">O pauză mică.<br><em>O lume de descoperit.</em></div><span class="wall-star">✳</span></div>
-            <div class="floor" aria-hidden="true"></div>
-            <div class="floor-rug" aria-hidden="true">STAY CURIOUS <span>↗</span></div>
-            <div class="plant plant-left" aria-hidden="true"><i></i><i></i><i></i><span></span></div>
-            <div class="plant plant-right" aria-hidden="true"><i></i><i></i><i></i><span></span></div>
-            ${products.map(p => `
-              <button class="shelf ${p.color}" style="left:${p.x}px" data-product="${p.id}" disabled aria-label="Inspectează raftul ${p.name} — ambalaj și valori demo">
-                <span class="shelf-sign"><span>${p.number} / NAPOLITANE</span><strong>${p.name}</strong><i>↗</i></span>
-                <span class="shelf-top"></span>
-                <span class="shelf-row row-back">${Array.from({ length: 4 }, () => miniPack(p)).join('')}</span>
-                <span class="shelf-row row-front">${Array.from({ length: 4 }, () => miniPack(p)).join('')}</span>
-                <span class="shelf-lip"><b>SLY / ${p.flavor}</b><span>DEMO</span></span>
-                <span class="shelf-base"></span>
-              </button>`).join('')}
-            <div class="aisle-label aisle-one" aria-hidden="true">01 — EXPLOREAZĂ</div>
-            <div class="aisle-label aisle-two" aria-hidden="true">02 — DESCOPERĂ</div>
-            <div class="entrance-mat" aria-hidden="true"><span>↑</span> INTRARE <span>↑</span></div>
-            <div id="player" class="player" aria-hidden="true">
-              <div class="player-shadow"></div><div class="avatar"><div class="avatar-legs"><i></i><i></i></div><div class="avatar-body"></div><div class="avatar-head"></div><div class="avatar-hair"></div><div class="avatar-arm"></div></div>
-              <div class="trolley"><span class="trolley-handle"></span><div id="trolley-packs"></div><span class="basket-grid"></span><i class="wheel wheel-one"></i><i class="wheel wheel-two"></i><b id="trolley-count" hidden>0</b></div>
-              <span class="player-label">TU</span>
+  <a class="skip-link" href="#journey">Sari la conținut</a>
+  <header class="header"><a class="logo" href="./" aria-label="Atelier de mese, reîncepe">a<span>ATELIER<br>DE MESE</span><i>✳</i></a><span class="header-label">UN MIC MAGAZIN. O LISTĂ MAI CLARĂ.</span><span class="session-badge">Planificare · fără comenzi</span></header>
+  <main id="journey" tabindex="-1">
+    <section class="intro"><div><span class="eyebrow">PLANUL TĂU DE CUMPĂRĂTURI / O SĂPTĂMÂNĂ</span><h1>La raft, <em>în ritmul tău.</em></h1></div><p>Explorează, alege cantități, pregătește lista.<br>Apoi ia-o cu tine <strong>la magazinul fizic.</strong></p></section>
+    <p class="independent-notice">Concept educațional independent, fără afiliere, aprobare sau parteneriat cu Lidl, Metro ori Kaufland. Numele desemnează departamente viitoare; nu un catalog comercial actual.</p>
+    <section id="onboarding" class="onboarding" aria-label="Nivelul 1: profil, energie și intenție"></section>
+    <section id="store" hidden inert aria-label="Nivelul 2: magazinul de explorat">
+      <div class="store-session"><div><span class="eyebrow">NIVELUL 2 / ALEGERI LA RAFT</span><p id="session-summary"></p></div><button class="text-button" id="edit-profile">Schimbă profilul / resetează sesiunea</button></div>
+      <div class="store-layout">
+        <section class="store-panel" aria-label="Explorează magazinul">
+          <div class="store-topline"><span><i class="status-dot"></i> ATELIER DE MESE</span><span>3 DEPARTAMENTE · 3D</span></div>
+          <div class="scene-viewport">
+            <div class="scene-3d" id="scene-mount" aria-hidden="true"></div>
+            <div id="store-world" class="store-world" tabindex="-1" role="region" aria-label="Magazin. Deplasează-te cu săgețile sau WASD. E lângă un raft." aria-describedby="movement-help">
+              <div class="back-wall" aria-hidden="true"><strong>Atelier <small>DE MESE</small></strong><p>O lume de descoperit. ✳</p></div>
+              <div class="floor" aria-hidden="true"></div>
+              ${departments.map(department => {
+                const products = retailerCatalog.filter(product => product.department === department.id)
+                return `<button class="shelf ${department.color}" style="left:${department.x}px" data-department="${department.id}" disabled aria-label="Departament ${department.name} · ${products.length ? 'explorează selecția' : 'produse în curând'}"><span class="shelf-sign"><small>${department.number} / DEPARTAMENT</small><strong>${department.name}</strong></span>${products.length ? `<span class="shelf-products">${products.slice(0, 6).map(miniPack).join('')}</span>` : '<span class="empty-shelf">Produse în curând</span>'}<span class="shelf-lip">SELECȚIE PENTRU MESE</span></button>`
+              }).join('')}
+              <div class="entrance-mat" aria-hidden="true">↑ INTRARE ↑</div>
+              <div id="player" class="player" aria-hidden="true"><div class="player-shadow"></div><div class="avatar"><div class="avatar-legs"><i></i><i></i></div><div class="avatar-body"></div><div class="avatar-head"></div><div class="avatar-hair"></div><div class="avatar-arm"></div></div><div class="trolley"><span class="trolley-handle"></span><div id="trolley-packs"></div><span class="basket-grid"></span><i class="wheel wheel-one"></i><i class="wheel wheel-two"></i><b id="trolley-count" hidden>0</b></div><span class="player-label">TU</span></div>
             </div>
+            <div class="camera-controls" role="group" aria-label="Vedere 3D"><span>VEDERE</span><button data-camera="-1" aria-label="Rotește vederea la stânga" disabled>↶</button><button data-camera="1" aria-label="Rotește vederea la dreapta" disabled>↷</button></div>
+            <span class="scene-demo">RAFTURI ÎN PREGĂTIRE · CONCEPT INDEPENDENT</span>
           </div>
-          <div class="entry-overlay" id="entry">
-            <div class="entry-card"><span class="entry-icon" aria-hidden="true">↗</span><div class="eyebrow">UȘA E DESCHISĂ</div><h2>Un mic pas.<br><em>Direct în magazin.</em></h2><p>Tu, un cărucior și trei rafturi de explorat.<br>Fără grabă. Fără listă de cumpărături.</p><button class="button primary" id="enter-store">Intră în magazin <span aria-hidden="true">↗</span></button><small>Fără cont · Fără plată · Doar curiozitate</small></div>
-          </div>
-          <span class="scene-demo">AMBALAJE CONCEPT · VALORI DEMO</span>
-          <div class="camera-controls" role="group" aria-label="Vedere 3D"><span>VEDERE 3D</span><button data-camera="-1" aria-label="Rotește vederea la stânga" disabled>↶</button><button data-camera="1" aria-label="Rotește vederea la dreapta" disabled>↷</button></div>
-        </div>
-        <p class="webgl-notice" id="webgl-notice" role="status" hidden>Vederea 3D nu este disponibilă în acest browser. Poți explora varianta 2D sau folosi accesul direct la raft; etichetele și căruciorul funcționează în continuare.</p>
-        <div class="game-controls">
-          <div class="movement-copy"><strong id="location" role="status">Căruciorul te așteaptă.</strong><p id="movement-help"><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> pentru mers · <kbd>E</kbd> la raft<br>Sau alege direct un produs de mai jos.</p></div>
-          <button class="button inspect-button" id="inspect-nearby" disabled>Apropie-te de un raft <span aria-hidden="true">↗</span></button>
-          <div class="direction-pad" role="group" aria-label="Deplasare cu atingere">
-            <button data-direction="up" aria-label="Mergi înainte" disabled>↑</button>
-            <button data-direction="left" aria-label="Mergi la stânga" disabled>←</button>
-            <button data-direction="down" aria-label="Mergi înapoi" disabled>↓</button>
-            <button data-direction="right" aria-label="Mergi la dreapta" disabled>→</button>
-          </div>
-        </div>
-        <div class="shortcut-heading"><span>ACCES DIRECT LA RAFT</span><span>Fără deplasare, aceeași experiență ↘</span></div>
-        <div class="product-shortcuts" id="product-shortcuts" tabindex="-1">
-          ${products.map(p => `<button class="product-shortcut ${p.color}" data-product="${p.id}" disabled>${miniPack(p)}<span><small>RAFT ${p.number}</small><strong>${p.name}</strong><small>Inspectează ambalajul</small></span><span class="shortcut-arrow" aria-hidden="true">↗</span></button>`).join('')}
-        </div>
-      </section>
-      <aside class="cart-panel" aria-labelledby="cart-title">
-        <div class="cart-heading"><div><div class="eyebrow">ALEGERILE TALE</div><h2 id="cart-title">Căruciorul <em>tău.</em></h2></div><span id="cart-count" class="cart-count">0</span></div>
-        <div class="cart-total"><span>TOTAL ÎN CĂRUCIOR</span><div><strong id="cart-total">0</strong> <span>kcal</span></div><p>Informație, nu un obiectiv.</p></div>
-        <div id="cart-items"></div>
-        <div class="cart-footnote"><span class="demo-pill">SIMULARE</span><p>Valori demo editabile, nu date nutriționale verificate. Fiecare adăugare păstrează porția și valorile alese atunci.</p></div>
-        <div class="receipt-edge" aria-hidden="true"></div>
-      </aside>
-    </div>
-    <section class="how-it-works" aria-label="Cum funcționează"><p><span>01</span> Plimbă-te printre rafturi.</p><p><span>02</span> Citește dincolo de ambalaj.</p><p><span>03</span> Explorează porțiile, fără judecată.</p></section>
+          <p class="webgl-notice" id="webgl-notice" role="status" hidden>3D nu este disponibil. Poți explora magazinul 2D sau folosi butoanele directe; atelierul și căruciorul funcționează în continuare.</p>
+          <div class="game-controls"><div><strong id="location" role="status">Căruciorul te așteaptă.</strong><p id="movement-help"><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> mers · <kbd>E</kbd> la raft<br>Sau folosește accesul direct de mai jos.</p></div><button class="button" id="inspect-nearby" disabled>Apropie-te de un raft</button><div class="direction-pad" role="group" aria-label="Deplasare cu atingere">${[['up', '↑', 'înainte'], ['left', '←', 'la stânga'], ['down', '↓', 'înapoi'], ['right', '→', 'la dreapta']].map(([direction, symbol, name]) => `<button data-direction="${direction}" aria-label="Mergi ${name}" disabled>${symbol}</button>`).join('')}</div></div>
+          <div class="section-heading"><h2>Departamente</h2><span>Acces direct, fără deplasare</span></div>
+          <div class="department-shortcuts">${departments.map(department => `<button class="department-card" data-department="${department.id}" disabled><small>${department.number} / DEPARTAMENT</small><strong>${department.name} ↗</strong><span>${retailerCatalog.some(product => product.department === department.id) ? 'Explorează selecția' : 'Produse în curând'}</span></button>`).join('')}</div>
+          <section class="demo-workshop" aria-labelledby="demo-title"><div class="section-heading"><h2 id="demo-title">Atelier <em>demo.</em></h2><span>SEPARAT DE RETAILERI</span></div><p>Selecție pentru mese echilibrate: exemple generice de cereale, leguminoase, lactate și legume. Nu sunt produse atribuite magazinelor și nici un clasament de sănătate.</p><div class="demo-cards">${demoCatalog.map(product => `<button class="demo-card" data-demo="${product.id}" disabled>${miniPack(product)}<span><small>${product.group}</small><strong>${product.name}</strong><small>Exemplu editabil · inspectează ↗</small></span></button>`).join('')}</div></section>
+        </section>
+        <aside class="cart-panel" aria-labelledby="cart-title"><div class="cart-heading"><div><span class="eyebrow">LISTĂ PENTRU O SĂPTĂMÂNĂ</span><h2 id="cart-title" tabindex="-1">Cumpărături, <em>cu un plan.</em></h2></div><span id="cart-count" class="cart-count">0</span></div>
+         <div class="cart-total"><span>ENERGIE ÎN TOATE CUMPĂRĂTURILE</span><div><strong id="cart-total">0</strong> kcal</div><p>Cantități cumpărate, nu porții consumate. Nu este un buget energetic.</p></div>
+         <dl class="cart-macros"><div><dt>Greutate totală cumpărată</dt><dd id="cart-weight">0 g</dd></div><div><dt>Proteine</dt><dd id="cart-protein">0 g</dd></div><div><dt>Fibre</dt><dd id="cart-fibre">0 g</dd></div><div><dt>Grupe alimentare distincte</dt><dd id="cart-variety">0</dd></div></dl><p id="cart-groups" class="hint"></p><p id="cart-reference" class="reference-note"></p><div id="cart-items"></div>
+         <button class="button primary review-button" id="review-list" disabled>Revizuiește lista →</button><p id="list-state" class="hint" role="status"></p>
+         <p class="cart-footnote"><span class="demo-pill">PLANIFICARE, NU COMANDĂ</span> ${shoppingNotice} Varietatea numără grupe alimentare, nu magazine. Exemplele demo nu confirmă disponibilitatea la raft.</p>
+        </aside>
+      </div>
+    </section>
   </main>
-  <footer><span>SLY NUTRITION / CONCEPT INTERACTIV INDEPENDENT</span><p>Nimic de plătit. Datele rămân în memoria paginii și se resetează la reîncărcare.</p><a href="https://slynutrition.eu/" target="_blank" rel="noopener noreferrer">Site-ul oficial SLY ↗</a></footer>
-  <dialog id="product-dialog" aria-labelledby="detail-title">
-    <button class="close-button" aria-label="Închide detaliile produsului" autofocus>✕</button><div id="product-detail"></div>
-  </dialog>
-  <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-`
+  <footer><span>ATELIER DE MESE / CONCEPT INDEPENDENT</span><p>Fără afiliere, cont, plată sau salvare automată. Lista se exportă doar la cererea ta; profilul nu se exportă. Informație educațională, nu sfat medical.</p><a href="#journey">Înapoi sus ↑</a></footer>
+  <dialog id="product-dialog" aria-labelledby="detail-title"><button class="close-button" aria-label="Închide detaliile" autofocus>✕</button><div id="product-detail"></div></dialog>
+  <dialog id="shopping-dialog" aria-labelledby="shopping-title"><button class="close-button" aria-label="Închide revizuirea listei" autofocus>✕</button><div class="shopping-review"><span class="eyebrow">DE LA MAGAZINUL VIRTUAL LA CEL FIZIC</span><h2 id="shopping-title">Lista pentru <em>o săptămână.</em></h2><p>${shoppingNotice}</p><div id="shopping-review-items"></div><p id="review-status" class="notice" role="status"></p><div class="actions"><button class="button primary" id="finalize-list">Finalizează lista</button><button class="button" id="print-shopping" disabled>Tipărește lista</button><button class="button" id="download-shopping" disabled>Descarcă .txt</button><button class="text-button" id="back-to-list">← Ajustează cumpărăturile</button></div><p class="hint">Tipărirea și fișierul includ doar cumpărăturile, fără datele sau estimările profilului. Exportul salvează local lista numai la cererea ta. Nu plasăm comenzi.</p></div></dialog>
+  <section id="print-list" aria-label="Listă pentru tipărire"><pre id="print-content"></pre></section>
+  <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>`
 
-const world = document.querySelector<HTMLDivElement>('#store-world')!
-const player = document.querySelector<HTMLDivElement>('#player')!
 const dialog = document.querySelector<HTMLDialogElement>('#product-dialog')!
-const nearbyButton = document.querySelector<HTMLButtonElement>('#inspect-nearby')!
-const location = document.querySelector<HTMLElement>('#location')!
-const cart: CartEntry[] = []
-const heldKeys = new Set<string>()
-const pointerDirections = new Map<number, string>()
-let entered = false
-let nearby: Product | undefined
+const shoppingDialog = document.querySelector<HTMLDialogElement>('#shopping-dialog')!
+const detail = document.querySelector<HTMLElement>('#product-detail')!
+const cart: ShoppingEntry[] = []
+let reference: Reference | undefined
 let activeProduct: Product | undefined
 let opener: HTMLElement | null = null
-let x = 470
-let y = 525
-let lastTime = 0
-let accumulator = 0
-let storeScene: StoreScene | undefined
-let threeAvailable = false
-
-try {
-  storeScene = new StoreScene({
-    mount: document.querySelector<HTMLElement>('#scene-mount')!,
-    products,
-    inspect: id => {
-      if (!entered || dialog.open) return
-      const product = products.find(item => item.id === id)
-      world.focus({ preventScroll: true })
-      if (product) openProduct(product)
-    },
-    availability: available => {
-      threeAvailable = available
-      document.querySelector('.scene-viewport')!.classList.toggle('has-webgl', available)
-      document.querySelector<HTMLElement>('#scene-mount')!.hidden = !available
-      document.querySelector<HTMLElement>('#webgl-notice')!.hidden = available
-      document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.disabled = !available || !entered)
-      clearMovement()
-    },
-  })
-} catch {
-  document.querySelector<HTMLElement>('#scene-mount')!.hidden = true
-  document.querySelector<HTMLElement>('#webgl-notice')!.hidden = false
-}
-document.querySelector('#scene-mount')!.addEventListener('pointerdown', () => {
-  if (entered && !dialog.open) world.focus({ preventScroll: true })
+let unlocked = false
+let finalized = false
+let shoppingOpener: HTMLElement | null = null
+const game = createGame(openDepartment, () => dialog.open || shoppingDialog.open)
+const announce = (message: string) => { document.querySelector('#announcement')!.textContent = message }
+const store = document.querySelector<HTMLElement>('#store')!
+const resetOnboarding = mountOnboarding(document.querySelector<HTMLElement>('#onboarding')!, next => {
+  reference = next
+  unlocked = true
+  store.hidden = false
+  store.inert = false
+  const label = next.mode === 'fictional' ? 'Profil fictiv adult' : next.mode === 'own' ? 'Date proprii · repere aproximative' : 'Explorare educațională · fără estimări personale'
+  document.querySelector('#session-summary')!.textContent = `${label} · ${next.goal === 'explore' ? 'explorare liberă' : next.goal === 'maintenance' ? 'menținere' : 'deficit moderat, simulare'}.`
+  renderCart()
+  game.enter()
+  document.querySelector<HTMLElement>('.store-session')!.scrollIntoView({ block: 'start' })
+  announce('Magazin deblocat. Explorează departamentele sau exemplele separate din Atelier demo.')
 })
-document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.addEventListener('click', () => {
-  clearMovement()
-  storeScene?.rotate(Number(button.dataset.camera))
-  world.focus({ preventScroll: true })
+document.querySelector('#edit-profile')!.addEventListener('click', () => {
+  unlocked = false
+  reference = undefined
+  activeProduct = undefined
+  cart.splice(0)
+  dialog.close()
+  shoppingDialog.close()
+  finalized = false
+  document.querySelector('#shopping-review-items')!.replaceChildren()
+  document.querySelector('#review-status')!.textContent = ''
+  document.querySelector('#print-content')!.textContent = ''
+  detail.replaceChildren()
+  game.reset()
+  renderCart()
+  document.querySelector('#session-summary')!.textContent = ''
+  store.hidden = true
+  store.inert = true
+  resetOnboarding()
+  announce('Sesiune resetată: datele, reperul și lista de cumpărături au fost șterse.')
+})
+document.querySelectorAll<HTMLButtonElement>('[data-department]').forEach(button => button.addEventListener('click', () => {
+  const department = departments.find(item => item.id === button.dataset.department)
+  if (unlocked && department) openDepartment(department)
 }))
-if (import.meta.hot) import.meta.hot.dispose(() => storeScene?.dispose())
-
-function announce(message: string) {
-  document.querySelector('#announcement')!.textContent = message
-}
-
-function clearMovement() {
-  heldKeys.clear()
-  pointerDirections.clear()
-  accumulator = 0
-  player.classList.remove('walking')
-}
-
-function resizeWorld() {
-  const viewport = document.querySelector<HTMLElement>('.scene-viewport')!
-  world.style.transform = `scale(${viewport.clientWidth / 960})`
-}
-new ResizeObserver(resizeWorld).observe(document.querySelector('.scene-viewport')!)
-resizeWorld()
-
-function renderPlayer() {
-  player.style.left = `${x}px`
-  player.style.top = `${y}px`
-  player.style.zIndex = y < 355 ? '2' : '4'
-  const next = products.find(p => {
-    const dx = Math.max(p.x - x, 0, x - (p.x + 165))
-    const dy = Math.max(205 - y, 0, y - 365)
-    return Math.hypot(dx, dy) < 105
-  })
-  if (next !== nearby || !location.dataset.ready) {
-    nearby = next
-    location.dataset.ready = 'true'
-    location.textContent = next ? `Raft ${next.number} · ${next.name}. Curios ce scrie pe etichetă?` : 'În ritmul tău. Alege un raft.'
-    nearbyButton.disabled = !next || !entered
-    nearbyButton.innerHTML = next ? `Inspectează ${next.name} <span aria-hidden="true">↗</span>` : 'Apropie-te de un raft <span aria-hidden="true">↗</span>'
-    document.querySelectorAll<HTMLElement>('.shelf').forEach(shelf => shelf.classList.toggle('nearby', shelf.dataset.product === next?.id))
-  }
-}
-
-// A rotation-safe footprint contains the avatar and trolley in every heading.
-function canMove(nextX: number, nextY: number) {
-  if (nextX < 45 || nextX > 915 || nextY < 132 || nextY > 568) return false
-  return !products.some(p => nextX + 53 > p.x && nextX - 53 < p.x + 165 && nextY + 53 > 205 && nextY - 53 < 365)
-}
-
-function tick(time: number) {
-  const delta = lastTime ? Math.min((time - lastTime) / 1000, 0.1) : 0
-  lastTime = time
-  const directions = new Set([...heldKeys].map(key => keyDirections[key]).concat([...pointerDirections.values()]))
-  let dx = Number(directions.has('right')) - Number(directions.has('left'))
-  let dy = Number(directions.has('down')) - Number(directions.has('up'))
-  if (threeAvailable && storeScene) ({ dx, dy } = storeScene.movement(dx, dy))
-  const moving = entered && !dialog.open && !document.hidden && (dx !== 0 || dy !== 0)
-  player.classList.toggle('walking', moving)
-  if (moving) {
-    const length = Math.hypot(dx, dy)
-    dx /= length
-    dy /= length
-    accumulator += delta
-    const step = 1 / 120
-    while (accumulator >= step) {
-      const nextX = x + dx * 175 * step
-      if (canMove(nextX, y)) x = nextX
-      const nextY = y + dy * 175 * step
-      if (canMove(x, nextY)) y = nextY
-      accumulator -= step
-    }
-    player.dataset.facing = dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'
-    renderPlayer()
-  } else {
-    accumulator = 0
-  }
-  if (!document.hidden) storeScene?.update(x, y, moving, dx, dy, time, entered ? nearby?.id : undefined)
-  requestAnimationFrame(tick)
-}
-player.style.left = `${x}px`
-player.style.top = `${y}px`
-requestAnimationFrame(tick)
-
-const keyDirections: Record<string, string> = { w: 'up', arrowup: 'up', a: 'left', arrowleft: 'left', s: 'down', arrowdown: 'down', d: 'right', arrowright: 'right' }
-function isInteractive(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest('input, textarea, select, button, a, summary, [contenteditable], [role="button"], [role="slider"]'))
-}
-window.addEventListener('keydown', event => {
-  if (!entered || dialog.open || event.altKey || event.ctrlKey || event.metaKey || isInteractive(event.target)) return
-  const key = event.key.toLowerCase()
-  if (keyDirections[key]) {
-    event.preventDefault()
-    heldKeys.add(key)
-  } else if (key === 'e' && nearby && !event.repeat) {
-    event.preventDefault()
-    openProduct(nearby)
-  }
-})
-window.addEventListener('keyup', event => {
-  heldKeys.delete(event.key.toLowerCase())
-})
-window.addEventListener('blur', clearMovement)
-document.addEventListener('visibilitychange', () => {
-  clearMovement()
-  lastTime = 0
-})
-document.addEventListener('focusin', event => {
-  if (isInteractive(event.target)) clearMovement()
-})
-document.querySelectorAll<HTMLButtonElement>('[data-direction]').forEach(button => {
-  button.addEventListener('pointerdown', event => {
-    if (!entered || dialog.open) return
-    event.preventDefault()
-    world.focus({ preventScroll: true })
-    button.setPointerCapture(event.pointerId)
-    pointerDirections.set(event.pointerId, button.dataset.direction!)
-  })
-  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    button.addEventListener(name, event => pointerDirections.delete((event as PointerEvent).pointerId))
-  }
-  button.addEventListener('click', event => {
-    if (event.detail !== 0 || !entered || dialog.open) return
-    const direction = button.dataset.direction
-    let dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0
-    let dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0
-    if (threeAvailable && storeScene) ({ dx, dy } = storeScene.movement(dx, dy))
-    for (let i = 0; i < 12; i++) {
-      if (canMove(x + dx * 2, y)) x += dx * 2
-      if (canMove(x, y + dy * 2)) y += dy * 2
-    }
-    renderPlayer()
-  })
-})
-document.querySelector('#enter-store')!.addEventListener('click', () => {
-  entered = true
-  document.querySelector<HTMLElement>('#entry')!.hidden = true
-  document.querySelectorAll<HTMLButtonElement>('[data-product], [data-direction]').forEach(button => button.disabled = false)
-  document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.disabled = !threeAvailable)
-  world.focus({ preventScroll: true })
-  renderPlayer()
-  announce('Ai intrat în magazin. Folosește săgețile sau WASD, ori butoanele de acces direct la raft.')
-})
-nearbyButton.addEventListener('click', () => {
-  if (nearby) openProduct(nearby)
-})
-document.querySelectorAll<HTMLButtonElement>('[data-product]').forEach(button => button.addEventListener('click', () => {
-  const product = products.find(p => p.id === button.dataset.product)
-  if (product && entered) openProduct(product)
+document.querySelectorAll<HTMLButtonElement>('[data-demo]').forEach(button => button.addEventListener('click', () => {
+  const product = demoCatalog.find(item => item.id === button.dataset.demo)
+  if (unlocked && product) openProduct(product)
 }))
 
-function openProduct(product: Product) {
-  clearMovement()
-  activeProduct = product
-  opener = document.activeElement instanceof HTMLElement ? document.activeElement : world
-  document.querySelector('#product-detail')!.innerHTML = `
-    <div class="detail-layout">
-      <div class="package-panel ${product.color}">
-        <div class="eyebrow">RAFT ${product.number} / AMBALAJ CONCEPT</div>
-        <div class="package-display">
-          <div id="package-front">${pack(product)}<span class="package-caption">FAȚĂ · CONCEPT VIZUAL, NU ETICHETĂ REALĂ</span></div>
-          <div id="package-back" class="package-back" hidden>
-            <span class="back-brand">sly / ${product.flavor}</span><h3>Dincolo de ambalaj.</h3><span class="demo-pill">ETICHETĂ DEMO</span>
-            <dl><div><dt>Valori introduse</dt><dd>/ 100 g</dd></div><div><dt>Energie</dt><dd id="label-calories"></dd></div><div><dt>Zaharuri</dt><dd id="label-sugar"></dd></div></dl>
-            <p><strong>Ingrediente și alergeni:</strong><br>informații indisponibile în acest prototip. Verifică ambalajul real înainte de consum.</p><p>Nu sunt date nutriționale verificate ale produsului SLY.</p>
-            <div class="barcode" aria-hidden="true"></div>
-          </div>
-        </div>
-        <button class="button flip-button" id="flip-package" aria-pressed="false" aria-controls="package-front package-back">Întoarce pe verso <span aria-hidden="true">⟳</span></button>
-        <p class="package-note">Ambalajul ilustrează 20 g.<br>Porția din simulare se alege separat.</p>
-      </div>
-      <div class="detail-content">
-        <div class="eyebrow">NAPOLITANE / ${product.flavor}</div><h2 id="detail-title">Un moment cu <em>${product.name.toLowerCase()}.</em></h2>
-        <p class="demo-notice"><strong>Simulare, nu valori verificate.</strong> Exemple editabile, nu informații nutriționale ale produsului SLY.</p>
-        <div class="portion-control"><label for="portion">Porția ta <small>Aceeași pentru ambele produse</small></label><output for="portion" id="portion-value">20 g</output><input id="portion" type="range" min="10" max="100" step="5" value="20"></div>
-        <fieldset class="nutrition-inputs"><legend>Valorile alese <span>/ 100 g · demo editabil</span></legend><label for="sly-calories">Energie (kcal)<input id="sly-calories" type="number" min="0" max="1000" step="0.1" value="${product.calories}" inputmode="decimal" required aria-describedby="input-error"></label><label for="sly-sugar">Zaharuri (g)<input id="sly-sugar" type="number" min="0" max="100" step="0.1" value="${product.sugar}" inputmode="decimal" required aria-describedby="input-error"></label></fieldset>
-        <p id="input-error" class="input-error" role="alert" hidden>Completează valori valide: 0–1.000 kcal și 0–100 g zaharuri, cu cel mult o zecimală.</p>
-        <div class="portion-summary" aria-live="polite" aria-atomic="true"><div><span>ÎN PORȚIA TA</span><strong id="portion-calories"></strong></div><p id="portion-sugar"></p></div>
-        <button class="button primary add-button" id="add-to-cart">Adaugă în cărucior <span aria-hidden="true">＋</span></button>
-        <p id="add-status" class="add-status" role="status"></p>
-        <details class="comparison"><summary>Compară cu altă gustare <span aria-hidden="true">＋</span></summary>
-          <p>Introdu valorile de pe două etichete pentru a compara aceeași porție. Mai puțin zahăr nu înseamnă automat mai puține calorii.</p>
-          <fieldset class="nutrition-inputs"><legend>Gustarea de comparat <span>/ 100 g · demo</span></legend><label for="regular-calories">Energie (kcal)<input id="regular-calories" type="number" min="0" max="1000" step="0.1" value="500" inputmode="decimal" required aria-describedby="comparison-error"></label><label for="regular-sugar">Zaharuri (g)<input id="regular-sugar" type="number" min="0" max="100" step="0.1" value="30" inputmode="decimal" required aria-describedby="comparison-error"></label></fieldset>
-          <p id="comparison-error" class="input-error" role="alert" hidden>Completează comparația: 0–1.000 kcal și 0–100 g zaharuri, cu cel mult o zecimală.</p>
-          <div class="comparison-results" aria-live="polite" aria-atomic="true"><div><span id="calorie-label"></span><strong id="calorie-result"></strong><small id="calorie-detail"></small></div><div><span id="sugar-label"></span><strong id="sugar-result"></strong><small id="sugar-detail"></small></div></div>
-        </details>
-        <p class="label-note">Ingrediente și alergeni: <strong>indisponibile.</strong> Verifică eticheta reală. Caloriile sunt informație, nu un scor „bun” sau „rău”.</p>
-        <button class="text-button" id="continue-exploring">← Înapoi printre rafturi</button>
-      </div>
-    </div>`
-  document.querySelector('#flip-package')!.addEventListener('click', () => {
-    const front = document.querySelector<HTMLElement>('#package-front')!
-    front.hidden = !front.hidden
-    document.querySelector<HTMLElement>('#package-back')!.hidden = !front.hidden
-    const button = document.querySelector('#flip-package')!
-    button.setAttribute('aria-pressed', String(front.hidden))
-    button.innerHTML = `${front.hidden ? 'Întoarce pe față' : 'Întoarce pe verso'} <span aria-hidden="true">⟳</span>`
-  })
-  document.querySelectorAll<HTMLInputElement>('#product-detail input').forEach(input => input.addEventListener('input', updateNutrition))
-  document.querySelector('#add-to-cart')!.addEventListener('click', addToCart)
-  document.querySelector('#continue-exploring')!.addEventListener('click', () => dialog.close())
-  updateNutrition()
+function showDialog() {
+  game.clearMovement()
+  if (!dialog.open) opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   dialog.showModal()
   document.body.classList.add('modal-open')
+  dialog.querySelector<HTMLButtonElement>('.close-button')!.focus()
 }
+function openDepartment(department: Department) {
+  if (!unlocked) return
+  activeProduct = undefined
+  const products = retailerCatalog.filter(product => product.department === department.id)
+  detail.innerHTML = `<div class="department-detail"><span class="eyebrow">DEPARTAMENT ${department.number}</span><h2 id="detail-title">${department.name}</h2><div class="empty-department"><span aria-hidden="true">▤</span><h3>${products.length ? 'Selecție pentru mese echilibrate' : 'Produse în curând'}</h3><p>${products.length ? 'Consultă proveniența fiecărui produs.' : 'Acest raft este gol. Produsele vor fi adăugate treptat, după verificarea etichetelor, surselor și grupelor alimentare.'}</p>${products.map(product => `<button class="button" data-catalog="${product.id}">${product.name}</button>`).join('')}</div><p class="notice">Concept independent, fără afiliere sau aprobare ${department.name}. Niciun produs din Atelier demo nu este atribuit acestui retailer.</p><button class="button" id="department-close">Înapoi la magazin și Atelier demo →</button></div>`
+  detail.querySelector('#department-close')!.addEventListener('click', () => dialog.close())
+  detail.querySelectorAll<HTMLButtonElement>('[data-catalog]').forEach(button => button.addEventListener('click', () => {
+    const product = products.find(item => item.id === button.dataset.catalog)
+    if (product) openProduct(product)
+  }))
+  showDialog()
+}
+
+const nutrientFields = [
+  { key: 'calories', name: 'Energie', unit: 'kcal', max: 1000 },
+  { key: 'protein', name: 'Proteine', unit: 'g', max: 100 },
+  { key: 'fibre', name: 'Fibre', unit: 'g', max: 100 },
+  { key: 'sugar', name: 'Zaharuri', unit: 'g', max: 100 },
+] as const
+function nutritionFields(prefix: string, values: Nutrition) {
+  return nutrientFields.map(field => `<label for="${prefix}-${field.key}">${field.name} (${field.unit})<input id="${prefix}-${field.key}" type="number" min="0" max="${field.max}" step="0.1" required value="${values[field.key]}" inputmode="decimal" aria-describedby="${prefix}-error"></label>`).join('')
+}
+function openProduct(product: Product) {
+  if (!unlocked) return
+  activeProduct = product
+  detail.innerHTML = `<div class="detail-layout"><div class="package-panel ${product.color}"><span class="eyebrow">${product.readiness === 'illustrative' ? 'ATELIER DEMO / FĂRĂ MAGAZIN CONFIRMAT' : `DEPARTAMENT ${product.department.toUpperCase()}`}</span><div id="package-front"><div class="concept-pack"><span>ATELIER<br>DE MESE</span><i aria-hidden="true">✳</i><strong>${product.name}</strong><small>REPREZENTARE CONCEPT</small></div><p>Față · reprezentare generică, nu fotografia unui ambalaj comercial.</p></div><div id="package-back" hidden><h3>Dincolo de ambalaj.</h3><span class="demo-pill">VALORI ALЕSE / 100 g</span><dl id="label-nutrition"></dl><p>Ingrediente și alergeni: informații indisponibile aici. Verifică eticheta reală înainte de consum. Nu pretindem că produsul este fără alergeni.</p></div><button class="button" id="flip-package" aria-pressed="false" aria-controls="package-front package-back">Întoarce pe verso ⟳</button><p class="hint">Gramajul unei unități cumpărate și porția de consum sunt lucruri diferite. Ambalajele demo sunt strict ilustrative, fără disponibilitate confirmată.</p></div>
+      <div class="detail-content"><span class="eyebrow">${product.group} / PLAN DE CUMPĂRĂTURI</span><h2 id="detail-title">${product.name}</h2><p class="notice">${product.provenance.source}. ${product.readiness === 'illustrative' ? 'Ambalajele și valorile sunt ipoteze de lucru, nu produse confirmate într-un magazin.' : 'Verifică eticheta și disponibilitatea actuală în magazin.'}</p>
+        <fieldset class="nutrition-inputs"><legend>Valorile alese / 100 g · demo editabil</legend>${nutritionFields('selected', product.nutrition)}</fieldset>
+        <p id="selected-error" class="input-error" role="alert" hidden>Folosește energie 0–1.000 kcal, proteine, fibre și zaharuri 0–100 g (maximum o zecimală).</p>
+        <fieldset class="purchase-inputs"><legend>Ce pui pe lista pentru o săptămână?</legend><label for="package-grams">Gramaj net / ambalaj sau unitate (g)<input id="package-grams" type="number" min="1" max="10000" step="0.1" value="${product.packageGrams}" required inputmode="decimal" aria-describedby="purchase-error purchase-help"></label><label for="purchase-quantity">Număr de ambalaje / unități<input id="purchase-quantity" type="number" min="1" max="99" step="1" value="1" required inputmode="numeric" aria-describedby="purchase-error"></label></fieldset>
+        <p id="purchase-help" class="hint">Pentru vrac, folosește o unitate și introdu greutatea cumpărată. Pentru ambalaje, introdu gramajul net al unui ambalaj și numărul de ambalaje.</p>
+        <p id="purchase-error" class="input-error" role="alert" hidden>Gramaj 1–10.000 g, maximum o zecimală; număr întreg de unități 1–99. Limite tehnice ale listei.</p>
+        <div class="purchase-summary" id="purchase-summary" aria-live="polite"></div><button class="button primary" id="add-to-cart">Adaugă cumpărăturile în listă ＋</button><p id="add-status" role="status"></p>
+        <section class="portion-estimator" aria-labelledby="portion-heading"><h3 id="portion-heading">Separat: explorează o porție</h3><p class="hint">Nu schimbă gramajul cumpărat sau lista. Aceeași porție este folosită pentru ambele exemple din comparație.</p><label for="portion">Porție de consum simulată (g)<input id="portion" type="number" min="5" max="500" step="5" value="${product.portion}" required inputmode="numeric" aria-describedby="portion-error"></label><p id="portion-error" class="input-error" role="alert" hidden>Porție 5–500 g, în pași de 5 g.</p><div class="portion-summary" id="portion-summary" aria-live="polite"></div></section>
+        <details class="comparison"><summary>Compară aceeași porție</summary><p>Introdu alte valori / 100 g. Comparăm cantități egale, nu ambalaje. Diferențele nu clasifică alimentele ca „bune” sau „rele”.</p><fieldset class="nutrition-inputs"><legend>Al doilea exemplu · demo editabil / 100 g</legend>${nutritionFields('comparison', { calories: 120, protein: 5, fibre: 2, sugar: 3 })}</fieldset><p id="comparison-error" class="input-error" role="alert" hidden>Completează energie 0–1.000 kcal, proteine, fibre și zaharuri 0–100 g, cu maximum o zecimală.</p><div id="comparison-results" class="comparison-results" aria-live="polite"></div></details>
+        <p class="hint">Datele și porțiile pot diferi între variante crude, fierte și preparate. Aceste exemple nu înlocuiesc eticheta reală sau evaluarea unui dietetician.</p><button class="text-button" id="continue-exploring">← Înapoi la atelier</button>
+      </div></div>`
+  detail.querySelector('#flip-package')!.addEventListener('click', () => {
+    const front = detail.querySelector<HTMLElement>('#package-front')!
+    front.hidden = !front.hidden
+    detail.querySelector<HTMLElement>('#package-back')!.hidden = !front.hidden
+    const button = detail.querySelector('#flip-package')!
+    button.setAttribute('aria-pressed', String(front.hidden))
+    button.textContent = front.hidden ? 'Întoarce pe față ⟳' : 'Întoarce pe verso ⟳'
+  })
+  detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.addEventListener('input', updateNutrition))
+  detail.querySelector('#add-to-cart')!.addEventListener('click', addToCart)
+  detail.querySelector('#continue-exploring')!.addEventListener('click', () => dialog.close())
+  updateNutrition()
+  showDialog()
+}
+const input = (id: string) => detail.querySelector<HTMLInputElement>(`#${id}`)!
+function validFields(ids: string[]) {
+  return ids.map(id => {
+    const field = input(id)
+    const valid = field.value !== '' && Number.isFinite(field.valueAsNumber) && field.checkValidity()
+    field.setAttribute('aria-invalid', String(!valid))
+    return valid
+  }).every(Boolean)
+}
+const selectedIds = nutrientFields.map(field => `selected-${field.key}`)
+const purchaseIds = ['package-grams', 'purchase-quantity']
+function readNutrition(prefix: string): Nutrition {
+  return { calories: input(`${prefix}-calories`).valueAsNumber, protein: input(`${prefix}-protein`).valueAsNumber, fibre: input(`${prefix}-fibre`).valueAsNumber, sugar: input(`${prefix}-sugar`).valueAsNumber }
+}
+function updateNutrition() {
+  const valid = validFields(selectedIds)
+  const purchaseValid = validFields(purchaseIds)
+  const portionValid = validFields(['portion'])
+  const comparisonValid = validFields(nutrientFields.map(field => `comparison-${field.key}`))
+  const portion = input('portion').valueAsNumber
+  const selected = readNutrition('selected')
+  const comparison = readNutrition('comparison')
+  detail.querySelector<HTMLElement>('#selected-error')!.hidden = valid
+  detail.querySelector<HTMLElement>('#purchase-error')!.hidden = purchaseValid
+  detail.querySelector<HTMLElement>('#portion-error')!.hidden = portionValid
+  detail.querySelector<HTMLElement>('#comparison-error')!.hidden = comparisonValid
+  detail.querySelector<HTMLButtonElement>('#add-to-cart')!.disabled = !valid || !purchaseValid
+  detail.querySelector('#add-status')!.textContent = ''
+  const grams = input('package-grams').valueAsNumber
+  const quantity = input('purchase-quantity').valueAsNumber
+  detail.querySelector('#purchase-summary')!.textContent = valid && purchaseValid ? `${quantity} unități × ${format(grams)} g = ${format(grams * quantity)} g cumpărate · ${format(selected.calories * grams * quantity / 100)} kcal în întreaga cantitate. Nu reprezintă o porție.` : 'Verifică gramajul, numărul de unități și valorile nutriționale.'
+  detail.querySelector('#portion-summary')!.textContent = valid && portionValid ? `${format(portion)} g → ${format(selected.calories * portion / 100)} kcal · ${format(selected.protein * portion / 100)} g proteine · ${format(selected.fibre * portion / 100)} g fibre · ${format(selected.sugar * portion / 100)} g zaharuri` : 'Verifică porția și valorile pentru acest calcul separat.'
+  detail.querySelector('#label-nutrition')!.innerHTML = nutrientFields.map(field => `<div><dt>${field.name}</dt><dd>${valid ? format(selected[field.key]) : '—'} ${field.unit}</dd></div>`).join('')
+  const results = detail.querySelector<HTMLElement>('#comparison-results')!
+  results.hidden = !valid || !comparisonValid || !portionValid
+  results.innerHTML = valid && comparisonValid && portionValid ? `<p>Ambele exemple: ${format(portion)} g / porție</p>${nutrientFields.map(field => {
+    const first = selected[field.key] * portion / 100
+    const second = comparison[field.key] * portion / 100
+    const difference = first - second
+    return `<div><strong>${field.name}: ${format(first)} vs ${format(second)} ${field.unit}</strong><span>Primul exemplu: ${Math.abs(difference) < 0.0001 ? 'fără diferență' : `${format(Math.abs(difference))} ${field.unit} ${difference > 0 ? 'mai mult' : 'mai puțin'}`}.</span></div>`
+  }).join('')}` : ''
+}
+function addToCart() {
+  if (!unlocked || !activeProduct || !validFields([...selectedIds, ...purchaseIds])) return
+  const packageGrams = input('package-grams').valueAsNumber
+  const quantity = input('purchase-quantity').valueAsNumber
+  const nutrition = readNutrition('selected')
+  const key = shoppingKey(activeProduct, packageGrams, nutrition)
+  const existing = cart.find(entry => entry.key === key)
+  const status = detail.querySelector('#add-status')!
+  if ((existing?.quantity ?? 0) + quantity > 99 || shoppingTotals(cart).quantity + quantity > 999 || (!existing && cart.length >= 30)) {
+    status.textContent = 'Limită tehnică: 99 unități / variantă, 30 variante, 999 unități. Redu cantitatea sau elimină un articol.'
+    return
+  }
+  if (existing) existing.quantity += quantity
+  else cart.push({ key, product: { ...activeProduct, nutrition: { ...nutrition }, packageGrams }, packageGrams, nutrition: { ...nutrition }, quantity })
+  invalidateList()
+  renderCart()
+  status.textContent = `${activeProduct.name}: ${quantity} unități × ${format(packageGrams)} g adăugate. Lista păstrează cantitatea cumpărată și valorile acestei variante; porția nu modifică lista.`
+}
+function renderCart() {
+  const totals = shoppingTotals(cart)
+  const count = totals.quantity
+  const groups = [...new Set(cart.map(entry => entry.product.group))]
+  document.querySelector('#cart-count')!.textContent = String(count)
+  document.querySelector('#cart-count')!.setAttribute('aria-label', `${count} ambalaje sau unități de cumpărat`)
+  document.querySelector('#cart-total')!.textContent = format(totals.calories)
+  document.querySelector('#cart-weight')!.textContent = `${format(totals.grams)} g`
+  document.querySelector('#cart-protein')!.textContent = `${format(totals.protein)} g`
+  document.querySelector('#cart-fibre')!.textContent = `${format(totals.fibre)} g`
+  document.querySelector('#cart-variety')!.textContent = String(groups.length)
+  document.querySelector('#cart-groups')!.textContent = groups.length ? groups.join(' · ') : 'Grupele apar pe măsură ce adaugi exemple.'
+  document.querySelector('#cart-reference')!.textContent = reference?.energy !== undefined ? `${reference.mode === 'fictional' ? 'Reper fictiv' : 'Reper orientativ'} din nivelul 1: ≈ ${format(reference.energy)} kcal/zi, strict educațional. Separat de cumpărături: nu îl multiplicăm cu 7 și nu îl folosim drept țintă pentru listă. Nu se tipărește și nu se exportă.` : 'Lista nu are țintă calorică. Nu presupunem câte persoane sau câte mese acoperă cumpărăturile.'
+  document.querySelector<HTMLButtonElement>('#review-list')!.disabled = !unlocked || cart.length === 0
+  document.querySelector('#list-state')!.textContent = cart.length ? finalized ? 'Listă finalizată. Orice modificare va necesita o nouă revizuire.' : 'Ciornă · verifică unitățile și gramajele înainte de finalizare.' : ''
+  const container = document.querySelector<HTMLElement>('#cart-items')!
+  container.innerHTML = cart.length ? shoppingGroups(cart).map(group => `<section class="retailer-list"><h3>${group.name}</h3>${group.id === 'atelier' ? '<p class="hint">Exemple generice; disponibilitate neconfirmată.</p>' : ''}<ul class="cart-list">${group.entries.map(entry => {
+    const index = cart.indexOf(entry)
+    return `<li class="cart-item">${miniPack(entry.product)}<div><h3>${entry.product.name}</h3><p>${entry.quantity} unități × ${format(entry.packageGrams)} g net/unitate<br><strong>${format(entry.packageGrams * entry.quantity)} g cumpărate</strong> · ${entry.product.group}</p><small>${format(entry.nutrition.calories)} kcal · ${format(entry.nutrition.protein)} g proteine · ${format(entry.nutrition.fibre)} g fibre · ${format(entry.nutrition.sugar)} g zaharuri / 100 g</small><p>${format(entry.nutrition.calories * entry.packageGrams / 100 * entry.quantity)} kcal în cantitatea cumpărată</p><div class="quantity-controls"><button data-quantity="${index}" data-change="-1" aria-label="Scade o unitate ${entry.product.name}, varianta ${index + 1}">−</button><span aria-label="${entry.quantity} unități">${entry.quantity}</span><button data-quantity="${index}" data-change="1" ${entry.quantity >= 99 || count >= 999 ? 'disabled' : ''} aria-label="Adaugă o unitate ${entry.product.name}, varianta ${index + 1}">+</button><button class="text-button" data-remove="${index}" aria-label="Elimină ${entry.product.name}, varianta ${index + 1}">Elimină</button></div></div></li>`
+  }).join('')}</ul></section>`).join('') : '<div class="cart-empty"><span aria-hidden="true">✳</span><h3>O săptămână de organizat.</h3><p>Alege un exemplu din Atelier demo și stabilește numărul de unități și gramajul cumpărat.</p></div>'
+  container.querySelectorAll<HTMLButtonElement>('[data-quantity], [data-remove]').forEach(button => button.addEventListener('click', () => {
+    const index = Number(button.dataset.quantity ?? button.dataset.remove)
+    const entry = cart[index]!
+    const change = Number(button.dataset.change ?? 0)
+    if (change > 0 && (entry.quantity >= 99 || shoppingTotals(cart).quantity >= 999)) return
+    if (button.dataset.remove !== undefined) cart.splice(index, 1)
+    else {
+      entry.quantity += change
+      if (!entry.quantity) cart.splice(index, 1)
+    }
+    invalidateList()
+    renderCart()
+    const nextIndex = Math.min(index, cart.length - 1)
+    const selector = button.dataset.remove !== undefined ? `[data-remove="${nextIndex}"]` : `[data-quantity="${nextIndex}"][data-change="${change}"]`
+    const next = container.querySelector<HTMLButtonElement>(selector)
+    const focus = next && !next.disabled ? next : container.querySelector<HTMLButtonElement>('[data-remove]')
+    if (focus) focus.focus({ preventScroll: true })
+    else document.querySelector<HTMLElement>('#cart-title')!.focus({ preventScroll: true })
+    announce(`Lista a fost actualizată: ${shoppingTotals(cart).quantity} unități de cumpărat. ${entry.product.name}.`)
+  }))
+  const visible = cart.flatMap(entry => Array.from({ length: Math.min(entry.quantity, 6) }, () => entry.product)).slice(0, 6)
+  game.setCart(visible, count)
+}
+function invalidateList() {
+  finalized = false
+  document.querySelector('#print-content')!.textContent = ''
+  document.querySelector('#shopping-review-items')!.replaceChildren()
+  if (shoppingDialog.open) renderReview()
+}
+function renderReview() {
+  const totals = shoppingTotals(cart)
+  document.querySelector('#shopping-review-items')!.innerHTML = shoppingGroups(cart).map(group => `<section class="review-group"><h3>${group.name}</h3>${group.id === 'atelier' ? `<p class="notice">${demoNotice}</p>` : '<p class="hint">Verifică disponibilitatea și eticheta actuală înainte de cumpărare.</p>'}<ul>${group.entries.map(entry => `<li><span aria-hidden="true">□</span><div><strong>${entry.product.name}</strong><p>${entry.quantity} ambalaje/unități × ${format(entry.packageGrams)} g net/unitate = <strong>${format(entry.quantity * entry.packageGrams)} g cumpărate</strong></p><small>${format(entry.nutrition.calories * entry.packageGrams * entry.quantity / 100)} kcal în întreaga cantitate · ${entry.product.group}</small></div></li>`).join('')}</ul></section>`).join('') + `<p class="review-totals"><strong>Total cumpărături</strong> · ${totals.quantity} ambalaje/unități · ${format(totals.grams)} g · ${format(totals.calories)} kcal</p><p class="hint">Energie = kcal/100 g × gramaj net/unitate × număr de unități ÷ 100. Nu calculăm un obiectiv de consum săptămânal.</p>`
+  document.querySelector('#review-status')!.textContent = finalized ? 'Lista este pregătită pentru tipărire sau descărcare. Exemplele demo rămân fără magazin confirmat; verifică disponibilitatea în magazinul fizic.' : 'Verifică numărul de ambalaje, gramajele și magazinul fiecărui articol, apoi finalizează lista. Aceasta nu este o comandă.'
+  document.querySelector<HTMLButtonElement>('#finalize-list')!.disabled = finalized || !cart.length
+  document.querySelector<HTMLButtonElement>('#print-shopping')!.disabled = !finalized
+  document.querySelector<HTMLButtonElement>('#download-shopping')!.disabled = !finalized
+}
+document.querySelector('#review-list')!.addEventListener('click', () => {
+  if (!unlocked || !cart.length) return
+  game.clearMovement()
+  shoppingOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  renderReview()
+  shoppingDialog.showModal()
+  document.body.classList.add('modal-open')
+  shoppingDialog.querySelector<HTMLButtonElement>('.close-button')!.focus()
+})
+document.querySelector('#finalize-list')!.addEventListener('click', () => {
+  if (!unlocked || !cart.length) return
+  finalized = true
+  renderReview()
+  renderCart()
+  document.querySelector<HTMLButtonElement>('#print-shopping')!.focus()
+})
+document.querySelector('#print-shopping')!.addEventListener('click', () => {
+  if (!finalized || !cart.length) return
+  document.querySelector('#print-content')!.textContent = shoppingText(cart)
+  window.print()
+})
+document.querySelector('#download-shopping')!.addEventListener('click', () => {
+  if (!finalized || !cart.length) return
+  const url = URL.createObjectURL(new Blob([shoppingText(cart)], { type: 'text/plain;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'lista-cumparaturi-o-saptamana.txt'
+  link.hidden = true
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+})
+window.addEventListener('beforeprint', () => {
+  document.querySelector('#print-content')!.textContent = cart.length ? shoppingText(cart) : 'LISTĂ DE CUMPĂRĂTURI — PLAN PENTRU O SĂPTĂMÂNĂ\nLista este goală.'
+})
+shoppingDialog.querySelector('.close-button')!.addEventListener('click', () => shoppingDialog.close())
+document.querySelector('#back-to-list')!.addEventListener('click', () => shoppingDialog.close())
+shoppingDialog.addEventListener('close', () => {
+  game.clearMovement()
+  document.body.classList.remove('modal-open')
+  if (unlocked) shoppingOpener?.focus({ preventScroll: true })
+})
 dialog.querySelector('.close-button')!.addEventListener('click', () => dialog.close())
 dialog.addEventListener('close', () => {
-  if (dialog.open) return
-  clearMovement()
+  game.clearMovement()
+  activeProduct = undefined
+  detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.value = '')
+  detail.replaceChildren()
   document.body.classList.remove('modal-open')
-  if (document.activeElement === document.body || dialog.contains(document.activeElement)) {
-    opener?.focus({ preventScroll: true })
-  }
+  if (unlocked) opener?.focus({ preventScroll: true })
 })
 dialog.addEventListener('click', event => {
   if (event.target !== dialog) return
   const rect = dialog.getBoundingClientRect()
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close()
 })
-
-const input = (id: string) => document.querySelector<HTMLInputElement>(`#${id}`)!
-function validInputs(ids: string[]) {
-  return ids.every(id => {
-    const field = input(id)
-    const valid = field.value !== '' && Number.isFinite(field.valueAsNumber) && field.checkValidity()
-    field.setAttribute('aria-invalid', String(!valid))
-    return valid
-  })
-}
-function updateNutrition() {
-  const portion = input('portion').valueAsNumber
-  const selectedValid = validInputs(['sly-calories', 'sly-sugar', 'portion'])
-  const comparisonValid = validInputs(['regular-calories', 'regular-sugar'])
-  document.querySelector('#portion-value')!.textContent = `${portion} g`
-  document.querySelector<HTMLElement>('#input-error')!.hidden = selectedValid
-  document.querySelector<HTMLElement>('#comparison-error')!.hidden = comparisonValid
-  document.querySelector<HTMLElement>('.comparison-results')!.hidden = !selectedValid || !comparisonValid
-  document.querySelector<HTMLButtonElement>('#add-to-cart')!.disabled = !selectedValid
-  document.querySelector('#add-status')!.textContent = ''
-  document.querySelector('#portion-calories')!.textContent = selectedValid ? `${format(input('sly-calories').valueAsNumber * portion / 100)} kcal` : '— kcal'
-  document.querySelector('#portion-sugar')!.textContent = selectedValid ? `${format(input('sly-sugar').valueAsNumber * portion / 100)} g zaharuri / ${portion} g` : 'Verifică valorile introduse.'
-  document.querySelector('#label-calories')!.textContent = selectedValid ? `${format(input('sly-calories').valueAsNumber)} kcal` : '—'
-  document.querySelector('#label-sugar')!.textContent = selectedValid ? `${format(input('sly-sugar').valueAsNumber)} g` : '—'
-  if (!selectedValid || !comparisonValid) return
-  for (const [key, field, unit, noun] of [['calorie', 'calories', 'kcal', 'calorii'], ['sugar', 'sugar', 'g', 'zaharuri']] as const) {
-    const before = input(`regular-${field}`).valueAsNumber * portion / 100
-    const after = input(`sly-${field}`).valueAsNumber * portion / 100
-    const difference = before - after
-    document.querySelector(`#${key}-label`)!.textContent = Math.abs(difference) < 0.0001 ? `${noun === 'calorii' ? 'Calorii' : 'Zaharuri'}: fără diferență` : `${difference > 0 ? 'Mai puține' : 'Mai multe'} ${noun}`
-    document.querySelector(`#${key}-result`)!.textContent = `${format(Math.abs(difference))} ${unit}`
-    document.querySelector(`#${key}-detail`)!.textContent = `${format(before)} → ${format(after)} ${unit} / ${portion} g`
-  }
-}
-
-function addToCart() {
-  if (!activeProduct || !validInputs(['sly-calories', 'sly-sugar', 'portion'])) return
-  const portion = input('portion').valueAsNumber
-  const calories = input('sly-calories').valueAsNumber
-  const sugar = input('sly-sugar').valueAsNumber
-  const key = `${activeProduct.id}:${portion}:${calories}:${sugar}`
-  const existing = cart.find(entry => entry.key === key)
-  const status = document.querySelector('#add-status')!
-  if ((existing?.quantity ?? 0) >= 99 || cart.reduce((sum, entry) => sum + entry.quantity, 0) >= 999 || (!existing && cart.length >= 30)) {
-    status.textContent = 'Căruciorul este plin pentru această simulare (99 / variantă, 30 variante, 999 porții). Scoate o porție pentru a continua.'
-    return
-  }
-  if (existing) existing.quantity++
-  else cart.push({ key, product: activeProduct, portion, calories, sugar, quantity: 1 })
-  renderCart()
-  status.textContent = `${activeProduct.name} · ${portion} g adăugat. Porția și valorile au fost păstrate în cărucior.`
-}
-
-function renderCart() {
-  const count = cart.reduce((sum, entry) => sum + entry.quantity, 0)
-  const total = cart.reduce((sum, entry) => sum + entry.calories * entry.portion / 100 * entry.quantity, 0)
-  document.querySelector('#cart-count')!.textContent = String(count)
-  document.querySelector('#cart-count')!.setAttribute('aria-label', `${count} porții în cărucior`)
-  document.querySelector('#cart-total')!.textContent = format(total)
-  const container = document.querySelector('#cart-items')!
-  container.innerHTML = cart.length ? `<ul class="cart-list">${cart.map((entry, index) => `
-    <li class="cart-item">${miniPack(entry.product)}<div><h3>${entry.product.name} <span>× ${entry.quantity}</span></h3><p>${entry.portion} g / porție · ${format(entry.calories * entry.portion / 100)} kcal</p><small>${format(entry.calories)} kcal · ${format(entry.sugar)} g zaharuri / 100 g</small><div class="cart-item-bottom"><strong>${format(entry.calories * entry.portion / 100 * entry.quantity)} kcal</strong><button data-remove="${index}" aria-label="Scoate o porție ${entry.product.name}, ${entry.portion} g, ${format(entry.calories)} kcal și ${format(entry.sugar)} g zaharuri per 100 g">− Scoate una</button></div></div></li>`).join('')}</ul>` : `
-    <div class="cart-empty"><div class="empty-cart-art" aria-hidden="true"><span>✳</span><i></i></div><h3>Loc pentru curiozitate.</h3><p>Inspectează un produs și alege<br>o porție. O vei vedea aici<br>și în căruciorul din magazin.</p></div>`
-  container.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(button => button.addEventListener('click', () => {
-    const index = Number(button.dataset.remove)
-    const entry = cart[index]!
-    entry.quantity--
-    if (!entry.quantity) cart.splice(index, 1)
-    renderCart()
-    const buttons = container.querySelectorAll<HTMLButtonElement>('[data-remove]')
-    if (buttons.length) buttons[Math.min(index, buttons.length - 1)]!.focus({ preventScroll: true })
-    else {
-      const title = document.querySelector<HTMLElement>('#cart-title')!
-      title.tabIndex = -1
-      title.focus({ preventScroll: true })
-    }
-    announce(`O porție ${entry.product.name} scoasă. ${cart.reduce((sum, item) => sum + item.quantity, 0)} porții în cărucior. Total ${document.querySelector('#cart-total')!.textContent} kcal.`)
-  }))
-  const visiblePacks = cart.flatMap(entry => Array.from({ length: Math.min(entry.quantity, 6) }, () => entry.product)).slice(0, 6)
-  storeScene?.setCart(visiblePacks, count)
-  document.querySelector('#trolley-packs')!.innerHTML = visiblePacks.map(miniPack).join('')
-  const trolleyCount = document.querySelector<HTMLElement>('#trolley-count')!
-  trolleyCount.hidden = count === 0
-  trolleyCount.textContent = count > 6 ? `+${count - 6}` : String(count)
-  player.setAttribute('data-cart-count', String(count))
-}
 renderCart()

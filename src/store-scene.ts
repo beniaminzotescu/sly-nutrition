@@ -1,17 +1,20 @@
 import * as THREE from 'three'
 
-type SceneProduct = { id: string; name: string; color: string; number: string; x: number }
+type SceneDepartment = { id: string; name: string; color: string; number: string; x: number }
+type SceneProduct = { id: string; name: string; color: string; department: string }
 type SceneOptions = {
   mount: HTMLElement
+  departments: SceneDepartment[]
   products: SceneProduct[]
   inspect: (id: string) => void
   availability: (available: boolean) => void
 }
 
 const palettes: Record<string, { background: string; ink: string }> = {
-  cocoa: { background: '#eee1cc', ink: '#68402f' },
-  vanilla: { background: '#e8edbf', ink: '#546837' },
-  hazelnut: { background: '#e5c399', ink: '#805132' },
+  grain: { background: '#eee1cc', ink: '#68402f' },
+  leaf: { background: '#e8edbf', ink: '#546837' },
+  clay: { background: '#e5c399', ink: '#805132' },
+  milk: { background: '#eef0e6', ink: '#3f6158' },
 }
 
 export class StoreScene {
@@ -77,7 +80,8 @@ export class StoreScene {
     this.scene.add(fill)
 
     this.buildRoom()
-    options.products.forEach(product => this.buildShelf(product))
+    options.products.forEach(product => this.buildPackMaterial(product))
+    options.departments.forEach(department => this.buildShelf(department))
     this.buildShopper()
     this.scene.add(this.shopper)
     this.counter = this.textSprite('0', '#234b3b', '#f7f9e9', 0.42, 0.28)
@@ -181,10 +185,10 @@ export class StoreScene {
     for (let i = 0; i < 20; i++) this.box(this.scene, [0.027, 2.85, 0.025], [i * 0.61 - 5.8, 1.53, -3.414], this.material('#3f6144'))
     this.sign(this.scene, 3.2, 0.8, [-3.75, 2.04, -3.38], context => {
       context.fillStyle = '#eef3d9'
-      context.font = '900 205px system-ui'
-      context.fillText('sly', 40, 187)
-      context.font = '22px system-ui'
-      context.fillText('T H E  L I T T L E  S T O R E', 382, 135)
+      context.font = '600 110px system-ui'
+      context.fillText('Atelier', 40, 140)
+      context.font = '32px system-ui'
+      context.fillText('D E  M E S E', 45, 204)
     })
     this.sign(this.scene, 4.3, 1.075, [0.7, 2.05, -3.38], context => {
       context.fillStyle = '#f1f2db'
@@ -239,10 +243,35 @@ export class StoreScene {
     }
   }
 
-  private buildShelf(product: SceneProduct) {
+  private buildPackMaterial(product: SceneProduct) {
+    const palette = palettes[product.color]!
+    const texture = this.texture(256, 512, context => {
+      context.fillStyle = palette.background
+      context.fillRect(0, 0, 256, 512)
+      context.fillStyle = palette.ink
+      context.textAlign = 'center'
+      context.font = 'bold 36px system-ui'
+      context.fillText('ATELIER', 128, 110)
+      context.font = '24px system-ui'
+      context.fillText(product.department === 'atelier' ? 'DEMO' : 'PRODUS', 128, 160)
+      context.beginPath()
+      context.arc(128, 290, 64, 0, Math.PI * 2)
+      context.stroke()
+      context.font = '80px Georgia'
+      context.fillText('✳', 128, 320)
+      context.font = '18px system-ui'
+      context.fillText('CONCEPT VIZUAL', 128, 450)
+    })
+    const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.55 })
+    this.resources.push(material)
+    this.packMaterials.set(`${product.department}:${product.id}`, material)
+  }
+
+  private buildShelf(product: SceneDepartment) {
+    const items = this.options.products.filter(item => item.department === product.id)
     const shelf = new THREE.Group()
     shelf.position.set((product.x + 82.5 - 480) / 80, 0, (285 - 350) / 80)
-    shelf.userData.productId = product.id
+    shelf.userData.departmentId = product.id
     this.scene.add(shelf)
     this.shelfTargets.push(shelf)
     const cream = this.material('#eae3ca')
@@ -255,57 +284,21 @@ export class StoreScene {
     this.box(shelf, [1.94, 1.5, 0.08], [0, 1.1, -0.85], cream)
     for (const side of [-0.98, 0.98]) this.box(shelf, [0.08, 1.76, 1.96], [side, 1.08, 0], edge)
     const palette = palettes[product.color]!
-    const texture = this.texture(256, 512, context => {
-      context.fillStyle = palette.background
-      context.fillRect(0, 0, 256, 512)
-      context.fillStyle = palette.ink
-      context.textAlign = 'center'
-      context.font = '900 115px system-ui'
-      context.fillText('sly', 119, 143)
-      context.font = '20px system-ui'
-      context.fillText('N U T R I T I O N', 128, 180)
-      context.font = 'bold 27px system-ui'
-      context.fillText(product.name.toUpperCase(), 128, 261)
-      context.font = '16px system-ui'
-      context.fillText('CONCEPT · DEMO', 128, 470)
-      context.save()
-      context.translate(128, 357)
-      context.rotate(-0.16)
-      for (let i = 0; i < 6; i++) {
-        context.fillStyle = i % 2 ? '#81532f' : '#d6a365'
-        context.fillRect(-75, -27 + i * 11, 150, 11)
-      }
-      context.restore()
-      context.fillStyle = '#94765455'
-      for (let i = 0; i < 256; i += 8) {
-        context.fillRect(i, 0, 3, 16)
-        context.fillRect(i, 493, 3, 19)
-      }
+    items.slice(0, 20).forEach((item, index) => {
+      const pack = new THREE.Mesh(this.packGeometry, this.packMaterials.get(`${item.department}:${item.id}`)!)
+      pack.position.set((index % 5 - 2) * 0.36, 0.69 + Math.floor(index / 10) * 0.78, 0.58 - Math.floor(index / 5) % 2 * 0.7)
+      pack.castShadow = true
+      shelf.add(pack)
     })
-    const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.55 })
-    this.resources.push(material)
-    this.packMaterials.set(product.id, material)
-    for (let level = 0; level < 2; level++) {
-      for (let row = 0; row < 2; row++) {
-        for (let column = 0; column < 5; column++) {
-          const pack = new THREE.Mesh(this.packGeometry, material)
-          pack.position.set((column - 2) * 0.36, 0.69 + level * 0.78, 0.58 - row * 0.7)
-          pack.rotation.x = -0.1
-          pack.rotation.z = (column % 2 ? 1 : -1) * 0.025
-          pack.castShadow = true
-          shelf.add(pack)
-        }
-      }
-    }
     this.box(shelf, [1.88, 0.46, 0.1], [0, 2.05, -0.83], this.material(palette.background))
     this.sign(shelf, 1.8, 0.45, [0, 2.05, -0.77], context => {
       context.fillStyle = palette.ink
       context.font = '25px system-ui'
-      context.fillText(`${product.number} / NAPOLITANE`, 45, 55)
+      context.fillText(`${product.number} / DEPARTAMENT`, 45, 55)
       context.font = '116px Georgia'
       context.fillText(product.name, 45, 168)
       context.font = '25px system-ui'
-      context.fillText('AMBALAJ CONCEPT · DEMO', 45, 219)
+      context.fillText(items.length ? 'SELECȚIE PENTRU MESE' : 'PRODUSE ÎN CURÂND', 45, 219)
       context.font = '60px system-ui'
       context.fillText('↗', 877, 150)
     })
@@ -315,8 +308,7 @@ export class StoreScene {
         context.fillRect(0, 0, 1024, 256)
         context.fillStyle = '#556548'
         context.font = '70px system-ui'
-        context.fillText('SLY / ' + product.name.toUpperCase(), 33, 158)
-        context.fillText('DEMO', 742, 158)
+        context.fillText(items.length ? 'CONSULTĂ ETICHETA' : 'PRODUSE ÎN CURÂND', 33, 158)
       })
     }
     const haloMaterial = new THREE.MeshBasicMaterial({ color: '#b4d17e', transparent: true, opacity: 0.48, depthWrite: false })
@@ -454,7 +446,7 @@ export class StoreScene {
   setCart(products: SceneProduct[], count: number) {
     this.basketContents.clear()
     products.slice(0, 6).forEach((product, i) => {
-      const pack = new THREE.Mesh(this.packGeometry, this.packMaterials.get(product.id)!)
+      const pack = new THREE.Mesh(this.packGeometry, this.packMaterials.get(`${product.department}:${product.id}`)!)
       pack.scale.setScalar(0.54)
       pack.position.set((i % 2 - 0.5) * 0.18, 0.54 + Math.floor(i / 4) * 0.04, (Math.floor(i / 2) % 3 - 1) * 0.13)
       pack.rotation.z = (i % 2 ? 1 : -1) * 0.14
@@ -484,8 +476,8 @@ export class StoreScene {
     const hit = this.raycaster.intersectObjects(this.shelfTargets, true)[0]
     if (!hit) return
     let object: THREE.Object3D | null = hit.object
-    while (object && !object.userData.productId) object = object.parent
-    if (object?.userData.productId) this.options.inspect(object.userData.productId as string)
+    while (object && !object.userData.departmentId) object = object.parent
+    if (object?.userData.departmentId) this.options.inspect(object.userData.departmentId as string)
   }
 
   private invalidate = () => { this.dirty = true }
