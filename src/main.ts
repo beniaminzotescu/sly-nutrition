@@ -376,12 +376,20 @@ shoppingDialog.addEventListener('close', () => {
 dialog.querySelector('.close-button')!.addEventListener('click', () => dialog.close())
 dialog.addEventListener('close', () => {
   game.clearMovement()
+  const editedIndex = editingEntry ? cart.indexOf(editingEntry) : -1
+  const returnTarget = editingEntry
+    ? (editedIndex >= 0 ? document.querySelector<HTMLButtonElement>(`#cart-items [data-edit="${editedIndex}"]`) : null)
+      ?? document.querySelector<HTMLElement>('#cart-title')
+    : opener
   activeProduct = undefined
   editingEntry = undefined
   detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.value = '')
   detail.replaceChildren()
   document.body.classList.remove('modal-open')
-  if (unlocked) opener?.focus({ preventScroll: true })
+  if (unlocked) {
+    const target = returnTarget?.isConnected ? returnTarget : document.querySelector<HTMLElement>('#store-world')
+    target?.focus({ preventScroll: true })
+  }
 })
 dialog.addEventListener('click', event => {
   if (event.target !== dialog) return
