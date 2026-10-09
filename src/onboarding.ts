@@ -1,6 +1,7 @@
 import { activities, estimateAdult, format, moderateReference, type AdultProfile, type Estimate, type Reference } from './nutrition'
 
-export function mountOnboarding(root: HTMLElement, unlock: (reference: Reference) => void) {
+export type OnboardingBody = AdultProfile & { activity: number }
+export function mountOnboarding(root: HTMLElement, unlock: (reference: Reference, body?: OnboardingBody) => void, options?: { savedBody?: () => OnboardingBody | undefined; educationOnly?: () => boolean }) {
   let mode: 'fictional' | 'own' = 'fictional'
   let profile: AdultProfile | undefined
   let estimate: Estimate | undefined
@@ -22,7 +23,7 @@ export function mountOnboarding(root: HTMLElement, unlock: (reference: Reference
   function frame(content: string) {
     root.innerHTML = `<div class="level-heading"><span class="eyebrow">NIVELUL 1 / ÎNAINTE DE RAFT</span><span>Pasul ${stage} din 3</span></div>
       <ol class="steps" aria-label="Progres">${['Profil', 'Energie & activitate', 'Intenție'].map((label, i) => `<li ${stage === i + 1 ? 'aria-current="step"' : ''}>${i + 1}. ${label}</li>`).join('')}</ol>${content}
-      <p class="privacy-note">Fără cont. Datele profilului sunt folosite doar în memoria paginii: fără salvare, cookie-uri, transmitere sau jurnalizare. Schimbarea profilului și resetarea le șterg. Reîncărcarea încheie sesiunea. Lista de cumpărături se poate tipări sau descărca doar la cererea ta, fără profil ori estimări personale.</p>`
+      <p class="privacy-note">Măsurătorile rămân în memoria paginii, dacă nu alegi explicit salvarea în cont din Profil. Salvarea datelor corporale este opțională și separată de liste, avatar și progres. Poți explora fără măsurători. Lista tipărită sau TXT nu include profilul ori estimările personale.</p>`
     focusTitle()
   }
   function education(message: string) {
@@ -33,6 +34,10 @@ export function mountOnboarding(root: HTMLElement, unlock: (reference: Reference
     showEnergy()
   }
   function showProfile() {
+    if (options?.educationOnly?.()) {
+      education('Demonstrație educațională fără cont, măsurători sau estimări personale. Nicio informație nu se salvează în cloud.')
+      return
+    }
     stage = 1
     frame(`<h2 tabindex="-1">Începe cu <em>un exemplu.</em></h2>
       <p class="lead">Înțelege energia de repaus, apoi pregătește cumpărăturile pentru o săptămână. Poți sări peste estimări. Nu este o dietă și nu este un calculator medical.</p>
@@ -58,6 +63,11 @@ export function mountOnboarding(root: HTMLElement, unlock: (reference: Reference
         <p id="profile-error" class="input-error" role="alert" hidden></p>
         <div class="actions"><button class="button primary" type="submit">Continuă la energie →</button><button class="text-button" type="button" id="skip-profile">Fără date · doar educație</button></div>
       </form>`)
+    const saved = mode === 'own' ? options?.savedBody?.() : undefined
+    if (saved && estimateAdult(saved, saved.activity)) {
+      for (const key of ['age', 'height', 'weight', 'coefficient'] as const) root.querySelector<HTMLInputElement | HTMLSelectElement>(`#${key}`)!.value = String(saved[key])
+      activity = saved.activity
+    }
     root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(button => button.addEventListener('click', () => {
       clear()
       mode = button.dataset.mode as typeof mode
@@ -191,10 +201,11 @@ export function mountOnboarding(root: HTMLElement, unlock: (reference: Reference
       event.preventDefault()
       const reference = selection()
       if (!reference) { update(); return }
+      const body = !educational && mode === 'own' && profile ? { ...profile, activity } : undefined
       clear()
       root.replaceChildren()
       root.hidden = true
-      unlock(reference)
+      unlock(reference, body)
     })
     update()
   }

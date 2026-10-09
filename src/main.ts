@@ -1,7 +1,11 @@
 import './style.css'
 import { departments, demoCatalog, retailerCatalog, type Department, type Nutrition, type Product } from './catalog'
 import { createGame } from './game'
-import { mountOnboarding } from './onboarding'
+import { addPackage, returnPackage } from './cart-actions'
+import { mountCartDrag } from './drag-cart'
+import { mountOnboarding, type OnboardingBody } from './onboarding'
+import { cloud } from './cloud'
+import { mountConnectedGame } from './connected-game'
 import { format, type Reference } from './nutrition'
 import { amountText, demoNotice, entryAmount, initialNutritionSources, initialSource, nutritionText, partialNotice, scaled, shoppingGroups, shoppingKey, shoppingNotice, shoppingText, shoppingTotals, sourceLabels, subtotalText, totalsText, valueText, type NutritionSources, type ShoppingEntry, type ValueSource } from './shopping-list'
 
@@ -14,7 +18,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <section class="intro"><div><span class="eyebrow">PLANUL TĂU DE CUMPĂRĂTURI / O SĂPTĂMÂNĂ</span><h1>La raft, <em>în ritmul tău.</em></h1></div><p>Explorează, alege cantități, pregătește lista.<br>Apoi ia-o cu tine <strong>la magazinul fizic.</strong></p></section>
     <p class="independent-notice">Concept educațional independent, fără afiliere, aprobare sau parteneriat cu Lidl, Metro ori Kaufland. Cele 8 produse sunt asociate departamentelor la cerere; etichetele și disponibilitatea nu sunt verificate.</p>
     <section id="onboarding" class="onboarding" aria-label="Nivelul 1: profil, energie și intenție"></section>
-    <section id="store" hidden inert aria-label="Nivelul 2: magazinul de explorat">
+    <section id="store" aria-label="Nivelul 2: magazinul de explorat">
       <div class="store-session"><div><span class="eyebrow">NIVELUL 2 / ALEGERI LA RAFT</span><p id="session-summary"></p></div><button class="text-button" id="edit-profile">Schimbă profilul / resetează sesiunea</button></div>
       <div class="store-layout">
         <section class="store-panel" aria-label="Explorează magazinul">
@@ -49,12 +53,33 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       </div>
     </section>
   </main>
-  <footer><span>ATELIER DE MESE / CONCEPT INDEPENDENT</span><p>Fără afiliere, cont, plată sau salvare automată. Lista se exportă doar la cererea ta; profilul nu se exportă. Informație educațională, nu sfat medical.</p><a href="#journey">Înapoi sus ↑</a></footer>
+  <footer><span>ATELIER DE MESE / CONCEPT INDEPENDENT</span><p>Listele și progresul pot fi salvate într-un cont real când serviciul este configurat. Datele corporale se salvează numai cu acord explicit. Modul offline nu salvează în cloud. Informație educațională, nu sfat medical.</p><a href="#journey">Înapoi sus ↑</a></footer>
   <dialog id="product-dialog" aria-labelledby="detail-title"><button class="close-button" aria-label="Închide detaliile" autofocus>✕</button><div id="product-detail"></div></dialog>
   <dialog id="shopping-dialog" aria-labelledby="shopping-title"><button class="close-button" aria-label="Închide revizuirea listei" autofocus>✕</button><div class="shopping-review"><span class="eyebrow">DE LA MAGAZINUL VIRTUAL LA CEL FIZIC</span><h2 id="shopping-title">Lista pentru <em>o săptămână.</em></h2><p>${shoppingNotice}</p><div id="shopping-review-items"></div><p id="review-status" class="notice" role="status"></p><div class="actions"><button class="button primary" id="finalize-list">Finalizează lista</button><button class="button" id="print-shopping" disabled>Tipărește lista</button><button class="button" id="download-shopping" disabled>Descarcă .txt</button><button class="text-button" id="back-to-list">← Ajustează cumpărăturile</button></div><p class="hint">Tipărirea și fișierul includ doar cumpărăturile, fără datele sau estimările profilului. Exportul salvează local lista numai la cererea ta. Nu plasăm comenzi.</p></div></dialog>
   <section id="print-list" aria-label="Listă pentru tipărire"><pre id="print-content"></pre></section>
   <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>`
 
+document.body.classList.add('game-shell')
+document.querySelector('.header')!.insertAdjacentHTML('beforeend', `<nav class="hud-nav" aria-label="Terminal de joc"><button data-hud="catalog-dialog">Rafturi</button><button data-hud="cart-dialog">Cărucior <b id="hud-count">0</b></button><button data-hud="profile">Profil</button><button data-hud="saved">Liste salvate</button><button data-hud="missions">Misiuni</button><button id="admin-open" hidden>Administrare</button></nav>`)
+document.querySelector('#app')!.insertAdjacentHTML('beforeend', `
+  <dialog id="entry-dialog" aria-label="Bun venit la Atelier"><div id="entry-content" class="terminal-content"></div></dialog>
+  <dialog id="onboarding-dialog" aria-label="Profil și explorare"></dialog>
+  <dialog id="catalog-dialog" aria-label="Magazine și rafturi"><button class="close-button" aria-label="Închide rafturile">✕</button><div class="terminal-content"><span class="eyebrow">EXPLORARE / MAGAZINE</span><h2>Alege un <em>raft.</em></h2><div id="store-selector"></div><p id="catalog-status" role="status"></p><div id="catalog-departments"></div><div id="catalog-demo"></div></div></dialog>
+  <dialog id="cart-dialog" aria-label="Căruciorul tău"><button class="close-button" aria-label="Închide căruciorul">✕</button><div class="dialog-dropbar"><div data-drop="return" tabindex="0">↩ Pune înapoi <small>exact un ambalaj / pachet</small></div><button class="button" data-undo disabled>Anulează ultima modificare</button></div></dialog>
+  <dialog id="utility-dialog" aria-label="Terminalul personal"><button class="close-button" aria-label="Închide terminalul">✕</button><div id="utility-content" class="terminal-content"></div></dialog>
+  <div class="world-hud"><span id="connection-label">DEMO OFFLINE · fără salvare cloud</span><button id="world-cart" data-drop="cart" disabled>🛒 Cărucior · <span id="world-count">0</span></button><button class="button" data-undo disabled>Anulează</button></div>`)
+const onboardingDialog = document.querySelector<HTMLDialogElement>('#onboarding-dialog')!
+onboardingDialog.append(document.querySelector('#onboarding')!)
+document.querySelector('#catalog-departments')!.append(document.querySelector('.department-shortcuts')!)
+document.querySelector('#catalog-demo')!.append(document.querySelector('.demo-workshop')!)
+document.querySelector('#cart-dialog')!.append(document.querySelector('.cart-panel')!)
+document.querySelector('#cart-dialog')!.append(document.querySelector('#cart-dialog .dialog-dropbar')!)
+const utilityDialog = document.querySelector<HTMLDialogElement>('#utility-dialog')!
+const utility = document.querySelector<HTMLElement>('#utility-content')!
+document.querySelectorAll<HTMLDialogElement>('#entry-dialog, #onboarding-dialog').forEach(modal => modal.addEventListener('cancel', event => event.preventDefault()))
+document.querySelectorAll<HTMLDialogElement>('#catalog-dialog, #cart-dialog, #utility-dialog').forEach(modal => {
+  modal.querySelector('.close-button')!.addEventListener('click', () => modal.close())
+})
 const dialog = document.querySelector<HTMLDialogElement>('#product-dialog')!
 const shoppingDialog = document.querySelector<HTMLDialogElement>('#shopping-dialog')!
 const detail = document.querySelector<HTMLElement>('#product-detail')!
@@ -68,11 +93,24 @@ let opener: HTMLElement | null = null
 let unlocked = false
 let finalized = false
 let shoppingOpener: HTMLElement | null = null
-const game = createGame(openDepartment, () => dialog.open || shoppingDialog.open)
+let undoSnapshot: ShoppingEntry[] | undefined
+let sessionAllowed = false
+let currentDepartments = [...departments]
+let currentProducts = [...retailerCatalog]
+let ownBody: OnboardingBody | undefined
+let savedBody: OnboardingBody | undefined
+let guestEducational = false
+let completed: string[] = []
+let avatarColor = 'clay'
+let onUtility: ((kind: string) => void) | undefined
+let onProgress: (() => void) | undefined
+const game = createGame(openDepartment, () => Boolean(document.querySelector('dialog[open]')) || document.body.classList.contains('drag-active'))
 const announce = (message: string) => { document.querySelector('#announcement')!.textContent = message }
 const store = document.querySelector<HTMLElement>('#store')!
-const resetOnboarding = mountOnboarding(document.querySelector<HTMLElement>('#onboarding')!, next => {
+const resetOnboarding = mountOnboarding(document.querySelector<HTMLElement>('#onboarding')!, (next, body) => {
+  if (!sessionAllowed) return
   reference = next
+  ownBody = body
   unlocked = true
   store.hidden = false
   store.inert = false
@@ -80,16 +118,18 @@ const resetOnboarding = mountOnboarding(document.querySelector<HTMLElement>('#on
   document.querySelector('#session-summary')!.textContent = `${label} · ${next.goal === 'explore' ? 'explorare liberă' : next.goal === 'maintenance' ? 'menținere' : 'deficit moderat, simulare'}.`
   renderCart()
   game.enter()
-  document.querySelector<HTMLElement>('.store-session')!.scrollIntoView({ block: 'start' })
+  onboardingDialog.close()
+  document.querySelector<HTMLButtonElement>('#world-cart')!.disabled = false
   announce('Magazin deblocat. Explorează departamentele sau exemplele separate din Atelier demo.')
-})
-document.querySelector('#edit-profile')!.addEventListener('click', () => {
+}, { savedBody: () => savedBody, educationOnly: () => guestEducational })
+function resetSession() {
+  drag.cancel()
   unlocked = false
   reference = undefined
+  ownBody = undefined
   activeProduct = undefined
   cart.splice(0)
-  dialog.close()
-  shoppingDialog.close()
+  document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(modal => modal.close())
   finalized = false
   document.querySelector('#shopping-review-items')!.replaceChildren()
   document.querySelector('#review-status')!.textContent = ''
@@ -98,13 +138,19 @@ document.querySelector('#edit-profile')!.addEventListener('click', () => {
   game.reset()
   renderCart()
   document.querySelector('#session-summary')!.textContent = ''
-  store.hidden = true
-  store.inert = true
+  store.hidden = false
+  store.inert = false
+  undoSnapshot = undefined
+  completed = []
+  avatarColor = 'clay'
+  game.setAvatarColor(avatarColor)
+  document.querySelector<HTMLButtonElement>('#world-cart')!.disabled = true
   resetOnboarding()
   announce('Sesiune resetată: datele, reperul și lista de cumpărături au fost șterse.')
-})
+}
+document.querySelector('#edit-profile')!.addEventListener('click', () => { resetSession(); onboardingDialog.showModal() })
 document.querySelectorAll<HTMLButtonElement>('[data-department]').forEach(button => button.addEventListener('click', () => {
-  const department = departments.find(item => item.id === button.dataset.department)
+  const department = currentDepartments.find(item => item.id === button.dataset.department)
   if (unlocked && department) openDepartment(department)
 }))
 document.querySelectorAll<HTMLButtonElement>('[data-demo]').forEach(button => button.addEventListener('click', () => {
@@ -121,15 +167,17 @@ function showDialog() {
 }
 function openDepartment(department: Department) {
   if (!unlocked) return
+  drag.cancel()
   activeProduct = undefined
-  const products = retailerCatalog.filter(product => product.department === department.id)
-  detail.innerHTML = `<div class="department-detail"><span class="eyebrow">DEPARTAMENT ${department.number}</span><h2 id="detail-title">${escapeHtml(department.name)}</h2><div class="empty-department"><span aria-hidden="true">▤</span><h3>${products.length} produse adăugate la cerere</h3><p>Etichete și disponibilitate de verificat. Numele nu confirmă nutrienți, ingrediente, stoc sau beneficii pentru sănătate.</p>${products.map(product => `<button class="button" data-catalog="${escapeHtml(product.id)}">${escapeHtml(product.name)}</button>`).join('')}</div><p class="notice">Concept independent, fără afiliere sau aprobare ${escapeHtml(department.name)}. Niciun produs din Atelier demo nu este atribuit acestui retailer.</p><button class="button" id="department-close">Înapoi la magazin și Atelier demo →</button></div>`
+  const products = currentProducts.filter(product => product.department === department.id)
+  detail.innerHTML = `<div class="department-detail"><span class="eyebrow">RAFT ${escapeHtml(department.number)}</span><h2 id="detail-title">${escapeHtml(department.name)}</h2><p>${products.length} produse · verifică eticheta, nu doar denumirea.</p><div class="shelf-cards">${products.map(product => `<article class="shelf-card">${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : miniPack(product)}<h3>${escapeHtml(product.name)}</h3><small>${escapeHtml(product.provenance.source)}</small><div class="actions"><button class="button" data-catalog="${escapeHtml(product.id)}">Inspectează eticheta</button><button class="button" data-quick-add="${escapeHtml(product.id)}">+ 1 pachet</button><button class="drag-handle" data-drag-product="${escapeHtml(product.id)}" aria-label="Trage un pachet ${escapeHtml(product.name)}">⠿ Trage</button></div></article>`).join('') || '<p>Nu există produse publicate pe acest raft.</p>'}</div><button class="button" id="department-close">Înapoi la magazin →</button></div><div class="dialog-dropbar"><div data-drop="cart">🛒 Pune în cărucior <small>un ambalaj / pachet per mutare</small></div><span class="drop-count"></span><button class="button" data-undo ${undoSnapshot ? '' : 'disabled'}>Anulează</button></div>`
   detail.querySelector('#department-close')!.addEventListener('click', () => dialog.close())
   detail.querySelectorAll<HTMLButtonElement>('[data-catalog]').forEach(button => button.addEventListener('click', () => {
     const product = products.find(item => item.id === button.dataset.catalog)
     if (product) openProduct(product)
   }))
   showDialog()
+  updateDropCounts()
 }
 
 const nutrientFields = [
@@ -143,6 +191,7 @@ function nutritionFields(prefix: string, values: Nutrition) {
 }
 function openProduct(product: Product, snapshot?: ShoppingEntry) {
   if (!unlocked) return
+  drag.cancel()
   activeProduct = product
   editingEntry = snapshot
   nutritionSources = { ...(snapshot?.nutritionSources ?? initialNutritionSources(product)) }
@@ -163,6 +212,7 @@ function openProduct(product: Product, snapshot?: ShoppingEntry) {
         <p class="hint">Datele și porțiile pot diferi între variante crude, fierte și preparate. Aceste exemple nu înlocuiesc eticheta reală sau evaluarea unui dietetician.</p><button class="text-button" id="continue-exploring">← Înapoi la magazin</button>
       </div></div>`
   detail.querySelector('#flip-package')!.addEventListener('click', () => {
+    completeMission('inspect')
     const front = detail.querySelector<HTMLElement>('#package-front')!
     front.hidden = !front.hidden
     detail.querySelector<HTMLElement>('#package-back')!.hidden = !front.hidden
@@ -170,11 +220,24 @@ function openProduct(product: Product, snapshot?: ShoppingEntry) {
     button.setAttribute('aria-pressed', String(front.hidden))
     button.textContent = front.hidden ? 'Întoarce pe față ⟳' : 'Întoarce pe verso ⟳'
   })
+  detail.querySelector<HTMLElement>('.package-panel .eyebrow')!.textContent = product.readiness === 'illustrative' ? 'ATELIER DEMO / FĂRĂ MAGAZIN CONFIRMAT' : `RAFT ${product.departmentName ?? product.department}`
+  if (product.imageUrl) {
+    const photo = document.createElement('img')
+    photo.src = product.imageUrl
+    photo.alt = `Imagine catalog: ${product.name}`
+    photo.className = 'product-photo'
+    photo.referrerPolicy = 'no-referrer'
+    detail.querySelector('.concept-pack')!.replaceWith(photo)
+    detail.querySelector('#package-front > p')!.textContent = 'Fotografie din catalogul publicat. Verifică varianta și eticheta în magazin.'
+  }
+  detail.querySelector('#package-back > p')!.textContent = `Ingrediente: ${product.ingredients || 'indisponibile'}. Alergeni: ${product.allergens || 'indisponibili'}. Verifică eticheta reală înainte de consum; informația absentă nu înseamnă lipsa alergenilor.`
+  if (product.readiness === 'approved') detail.querySelector('.detail-content > .notice')!.textContent = `${product.provenance.source}. Etichetă publicată ca verificată de administrator. Verifică întotdeauna varianta și ambalajul fizic; nu confirmăm stocul.`
   detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.addEventListener('input', () => {
     const nutrient = nutrientFields.find(item => field.id === `selected-${item.key}`)
     if (nutrient) nutritionSources[nutrient.key] = field.value === '' ? 'unknown' : 'manual'
     if (field.id === 'package-grams') amountSource = field.value === '' ? 'unknown' : 'manual'
     updateNutrition()
+    if (field.id.startsWith('comparison-') && validFields([...selectedIds, 'portion', ...nutrientFields.map(item => `comparison-${item.key}`)]) && nutrientFields.some(item => readOptional(`selected-${item.key}`) !== null && readOptional(`comparison-${item.key}`) !== null)) completeMission('compare')
   }))
   detail.querySelector('#add-to-cart')!.addEventListener('click', addToCart)
   detail.querySelector('#continue-exploring')!.addEventListener('click', () => dialog.close())
@@ -251,10 +314,14 @@ function addToCart() {
   if (editingEntry) {
     const index = cart.indexOf(editingEntry)
     if (index < 0) return
+    rememberUndo()
     cart[index] = snapshot
     editingEntry = snapshot
-  } else if (existing) existing.quantity += quantity
-  else cart.push(snapshot)
+  } else {
+    rememberUndo()
+    if (existing) existing.quantity += quantity
+    else cart.push(snapshot)
+  }
   invalidateList()
   renderCart()
   status.textContent = `${activeProduct.name}: ${amountText(snapshot)}. ${editingEntry ? 'Poziție actualizată.' : 'Adăugat în listă.'} Lista păstrează valorile și proveniența acestei variante; editările nesalvate și porția nu modifică lista.`
@@ -262,6 +329,7 @@ function addToCart() {
 function renderCart() {
   const totals = shoppingTotals(cart)
   const count = totals.quantity
+  updateDropCounts()
   const groups = [...new Set(cart.map(entry => entry.product.group))]
   document.querySelector('#cart-count')!.textContent = String(count)
   document.querySelector('#cart-count')!.setAttribute('aria-label', `${count} ambalaje sau unități de cumpărat`)
@@ -285,21 +353,23 @@ function renderCart() {
   document.querySelector<HTMLButtonElement>('#review-list')!.disabled = !unlocked || cart.length === 0
   document.querySelector('#list-state')!.textContent = cart.length ? finalized ? 'Listă finalizată. Orice modificare va necesita o nouă revizuire.' : 'Ciornă · verifică ambalajele, masa / volumul și etichetele înainte de finalizare.' : ''
   const container = document.querySelector<HTMLElement>('#cart-items')!
-  container.innerHTML = cart.length ? shoppingGroups(cart).map(group => `<section class="retailer-list"><h3>${group.name}</h3>${group.id === 'atelier' ? '<p class="hint">Exemple generice; disponibilitate neconfirmată.</p>' : ''}<ul class="cart-list">${group.entries.map(entry => {
+  container.innerHTML = cart.length ? shoppingGroups(cart).map(group => `<section class="retailer-list"><h3>${escapeHtml(group.name)}</h3>${group.id === 'atelier' ? '<p class="hint">Exemple generice; disponibilitate neconfirmată.</p>' : ''}<ul class="cart-list">${group.entries.map(entry => {
     const index = cart.indexOf(entry)
     const name = escapeHtml(entry.product.name)
-    return `<li class="cart-item">${miniPack(entry.product)}<div><h3>${name}</h3><p>${escapeHtml(amountText(entry))} · ${escapeHtml(entry.product.group)}</p><small>${escapeHtml(nutritionText(entry))}</small><p>${valueText(scaled(entry.nutrition.calories, entryAmount(entry)), 'kcal')} în cantitatea cumpărată</p><p class="hint">Cantitate netă: ${sourceLabels[entry.amountSource]}. Proveniență produs: ${escapeHtml(entry.product.provenance.source)}.</p><button class="text-button" data-edit="${index}" aria-label="Editează eticheta ${name}, varianta ${index + 1}">Editează eticheta / cantitatea netă</button><div class="quantity-controls"><button data-quantity="${index}" data-change="-1" aria-label="Scade un ambalaj/pachet ${name}, varianta ${index + 1}">−</button><span aria-label="${entry.quantity} ambalaje/pachete">${entry.quantity}</span><button data-quantity="${index}" data-change="1" ${entry.quantity >= 99 || count >= 999 ? 'disabled' : ''} aria-label="Adaugă un ambalaj/pachet ${name}, varianta ${index + 1}">+</button><button class="text-button" data-remove="${index}" aria-label="Elimină ${name}, varianta ${index + 1}">Elimină</button></div></div></li>`
+    return `<li class="cart-item">${miniPack(entry.product)}<div><h3>${name}</h3><p>${escapeHtml(amountText(entry))} · ${escapeHtml(entry.product.group)}</p><small>${escapeHtml(nutritionText(entry))}</small><p>${valueText(scaled(entry.nutrition.calories, entryAmount(entry)), 'kcal')} în cantitatea cumpărată</p><p class="hint">Cantitate netă: ${sourceLabels[entry.amountSource]}. Proveniență produs: ${escapeHtml(entry.product.provenance.source)}.</p><button class="text-button" data-edit="${index}" aria-label="Editează eticheta ${name}, varianta ${index + 1}">Editează eticheta / cantitatea netă</button><div class="quantity-controls"><button data-quantity="${index}" data-change="-1" aria-label="Scade un ambalaj/pachet ${name}, varianta ${index + 1}">−</button><span aria-label="${entry.quantity} ambalaje/pachete">${entry.quantity}</span><button data-quantity="${index}" data-change="1" ${entry.quantity >= 99 || count >= 999 ? 'disabled' : ''} aria-label="Adaugă un ambalaj/pachet ${name}, varianta ${index + 1}">+</button><button class="text-button" data-remove="${index}" aria-label="Pune înapoi un pachet ${name}">Pune înapoi 1 pachet</button><button class="drag-handle" data-drag-entry="${index}" aria-label="Trage înapoi un pachet ${name}">⠿ Trage 1 pachet</button></div></div></li>`
   }).join('')}</ul></section>`).join('') : '<div class="cart-empty"><span aria-hidden="true">✳</span><h3>O săptămână de organizat.</h3><p>Alege un produs din departamente sau un exemplu separat din Atelier demo. Cantitatea netă și nutrienții pot rămâne necunoscuți.</p></div>'
   container.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(button => button.addEventListener('click', () => {
     const entry = cart[Number(button.dataset.edit)]!
     openProduct(entry.product, entry)
   }))
   container.querySelectorAll<HTMLButtonElement>('[data-quantity], [data-remove]').forEach(button => button.addEventListener('click', () => {
+    if (!unlocked || !sessionAllowed || drag.active()) return
     const index = Number(button.dataset.quantity ?? button.dataset.remove)
     const entry = cart[index]!
     const change = Number(button.dataset.change ?? 0)
     if (change > 0 && (entry.quantity >= 99 || shoppingTotals(cart).quantity >= 999)) return
-    if (button.dataset.remove !== undefined) cart.splice(index, 1)
+    rememberUndo()
+    if (button.dataset.remove !== undefined) cart.splice(0, cart.length, ...returnPackage(cart, index)!)
     else {
       entry.quantity += change
       if (!entry.quantity) cart.splice(index, 1)
@@ -342,10 +412,144 @@ document.querySelector('#review-list')!.addEventListener('click', () => {
 document.querySelector('#finalize-list')!.addEventListener('click', () => {
   if (!unlocked || !cart.length) return
   finalized = true
+  completeMission('review')
   renderReview()
   renderCart()
   document.querySelector<HTMLButtonElement>('#print-shopping')!.focus()
 })
+  function rememberUndo() { undoSnapshot = structuredClone(cart) }
+  function updateDropCounts() {
+    const count = shoppingTotals(cart).quantity
+    document.querySelectorAll('#hud-count, #world-count, .drop-count').forEach(node => { node.textContent = `${count}${node.classList.contains('drop-count') ? ' pachete în listă' : ''}` })
+    document.querySelectorAll<HTMLButtonElement>('[data-undo]').forEach(button => { button.disabled = !undoSnapshot || !unlocked })
+  }
+  function commitCart(next: ShoppingEntry[] | undefined) {
+    if (!unlocked || !sessionAllowed) return
+    if (!next) { announce('Limită: 99 pachete pe variantă, 30 variante, 999 pachete.'); return }
+    rememberUndo()
+    cart.splice(0, cart.length, ...next)
+    invalidateList()
+    renderCart()
+    announce(`Listă actualizată: ${shoppingTotals(cart).quantity} pachete. Poți anula ultima modificare.`)
+  }
+  const drag = mountCartDrag({
+    allowed: () => unlocked && sessionAllowed,
+    freeze: () => game.clearMovement(), announce,
+    commit: payload => {
+      if (payload.kind === 'cart') commitCart(returnPackage(cart, payload.index))
+      else {
+        const product = currentProducts.find(item => item.id === payload.id)
+        if (product) commitCart(addPackage(cart, product))
+      }
+    },
+  })
+  document.addEventListener('click', event => {
+    const target = (event.target as Element).closest<HTMLElement>('button')
+    if (!target || !unlocked || !sessionAllowed) return
+    if (target.hasAttribute('data-undo') && undoSnapshot) {
+      drag.cancel()
+      cart.splice(0, cart.length, ...structuredClone(undoSnapshot))
+      undoSnapshot = undefined
+      invalidateList()
+      renderCart()
+      announce('Ultima modificare a fost anulată.')
+    }
+    if (target.dataset.quickAdd && !drag.active()) {
+      const product = currentProducts.find(item => item.id === target.dataset.quickAdd)
+      if (product) commitCart(addPackage(cart, product))
+    }
+    const kind = target.dataset.hud ?? (target.id === 'world-cart' ? 'cart-dialog' : undefined)
+    if (!kind) return
+    drag.cancel()
+    game.clearMovement()
+    if (kind.endsWith('-dialog')) document.querySelector<HTMLDialogElement>(`#${kind}`)!.showModal()
+    else if (kind === 'missions') showMissions()
+    else if (onUtility && !guestEducational) onUtility(kind)
+    else showOfflineUtility(kind)
+  })
+  function completeMission(id: string) {
+    if (!unlocked || completed.includes(id)) return
+    completed.push(id)
+    announce('Descoperire educațională completată. Culorile avatarului se deblochează fără scor corporal.')
+    if (!guestEducational) onProgress?.()
+  }
+  function showMissions() {
+    utility.innerHTML = `<span class="eyebrow">DESCOPERIRI, NU CALORII</span><h2>Învață în <em>ritmul tău.</em></h2><p>Fără serii zilnice, clasamente corporale sau recompense pentru deficit. Nicio misiune nu este obligatorie.</p><ul class="mission-list">${[['inspect', 'Întoarce un ambalaj și citește eticheta'], ['compare', 'Compară două valori pentru aceeași porție'], ['review', 'Organizează și finalizează lista']].map(([id, label]) => `<li>${completed.includes(id!) ? '✓' : '○'} ${label}</li>`).join('')}</ul><h3>Culori pentru avatar</h3><div class="actions">${['clay', 'leaf', 'milk'].map((color, index) => `<button class="button ${color}" data-avatar="${color}" ${completed.length < index ? 'disabled' : ''} aria-pressed="${avatarColor === color}">${['Teracotă', 'Salvie', 'Perlat'][index]}${completed.length < index ? ` · ${index} descoperiri` : ''}</button>`).join('')}</div><p class="notice">Toate funcțiile de bază și listele reutilizabile sunt gratuite. În viitor: colecții cosmetice premium opționale. Nicio plată disponibilă acum, fără reclame bazate pe date personale.</p>`
+    utility.querySelectorAll<HTMLButtonElement>('[data-avatar]').forEach(button => button.addEventListener('click', () => {
+      avatarColor = button.dataset.avatar!
+      game.setAvatarColor(avatarColor)
+      if (!guestEducational) onProgress?.()
+      showMissions()
+    }))
+    if (!utilityDialog.open) utilityDialog.showModal()
+  }
+  function showOfflineUtility(kind: string) {
+    utility.innerHTML = kind === 'profile'
+      ? `<h2>Profilul sesiunii</h2><p>${escapeHtml(document.querySelector('#session-summary')!.textContent ?? '')}</p><p>DEMO OFFLINE. Datele rămân în memoria acestei pagini.</p><button class="button" id="reset-profile">Schimbă profilul și golește sesiunea</button>`
+      : '<h2>Liste salvate</h2><p>DEMO OFFLINE: nu există salvare în cloud. Lista curentă poate fi revizuită, tipărită și descărcată TXT din cărucior. Conturile și listele reutilizabile necesită configurarea serviciului.</p>'
+    utility.querySelector('#reset-profile')?.addEventListener('click', () => { resetSession(); onboardingDialog.showModal() })
+    utilityDialog.showModal()
+  }
+  renderCart()
+  const entryDialog = document.querySelector<HTMLDialogElement>('#entry-dialog')!
+  document.querySelector('#entry-content')!.innerHTML = `<span class="eyebrow">ATELIER DE MESE / MAGAZIN EDUCAȚIONAL</span><h1>La raft,<br><em>în ritmul tău.</em></h1><p>Descoperă etichetele. Umple căruciorul. Ia lista cu tine.</p><p class="notice">DEMO OFFLINE ONLY · cele 8 produse cerute sunt exemple neconfirmate. Fără conturi, plăți sau salvare cloud.</p><button class="button primary" id="enter-demo">Explorează demonstrația offline →</button>`
+  document.querySelector('#enter-demo')!.addEventListener('click', () => { sessionAllowed = true; entryDialog.close(); onboardingDialog.showModal() })
+  entryDialog.showModal()
+  function applyCatalog(nextDepartments: Department[], products: Product[]) {
+    drag.cancel()
+    if (dialog.open) dialog.close()
+    currentDepartments = nextDepartments
+    currentProducts = products
+    document.querySelector('#catalog-demo')!.replaceChildren()
+    document.querySelector('#catalog-departments')!.innerHTML = `<div class="department-shortcuts">${nextDepartments.map(department => `<button class="department-card" data-live-department="${escapeHtml(department.id)}"><small>RAFT ${escapeHtml(department.number)}</small><strong>${escapeHtml(department.name)}</strong><span>${products.filter(product => product.department === department.id).length} produse</span></button>`).join('')}</div>`
+    const world = document.querySelector('#store-world')!
+    world.querySelectorAll('.shelf').forEach(node => node.remove())
+    for (const department of nextDepartments) {
+      const button = document.createElement('button')
+      button.className = `shelf ${department.color}`
+      button.dataset.liveDepartment = department.id
+      button.style.left = `${department.x}px`
+      button.style.top = `${department.y ?? 205}px`
+      button.textContent = department.name
+      button.setAttribute('aria-label', `Explorează raftul ${department.name}`)
+      world.append(button)
+    }
+    document.querySelectorAll<HTMLElement>('[data-live-department]').forEach(button => button.addEventListener('click', () => {
+      const department = currentDepartments.find(item => item.id === button.dataset.liveDepartment)
+      if (unlocked && sessionAllowed && department) openDepartment(department)
+    }))
+    game.setCatalog(nextDepartments, products)
+    game.setAvatarColor(avatarColor)
+    renderCart()
+  }
+  if (cloud.configured || cloud.configurationError) {
+    sessionAllowed = false
+    document.querySelector('#connection-label')!.textContent = 'CONT REAL · conectare necesară'
+    applyCatalog([], [])
+    const connected = mountConnectedGame({
+      reset: () => { guestEducational = false; sessionAllowed = false; resetSession() },
+      allow: () => { sessionAllowed = true; resetOnboarding(); onboardingDialog.showModal() },
+      catalog: applyCatalog,
+      readCart: () => structuredClone(cart),
+      loadCart: next => commitCart(next),
+      body: () => ownBody,
+      savedBody: next => { savedBody = next },
+      readProgress: () => ({ completed: [...completed], color: avatarColor }),
+      restoreProgress: (nextCompleted, color) => { completed = [...nextCompleted]; avatarColor = color; game.setAvatarColor(color) },
+      utility, utilityDialog, entry: document.querySelector<HTMLElement>('#entry-content')!, entryDialog,
+      educationalDemo: () => {
+        resetSession()
+        guestEducational = true
+        sessionAllowed = true
+        applyCatalog([...departments, { id: 'atelier', name: 'Atelier didactic', number: '04', x: 110, y: 475, color: 'milk' }], [...retailerCatalog, ...demoCatalog])
+        document.querySelector('#connection-label')!.textContent = 'DEMO OFFLINE EDUCAȚIONAL · fără cont sau salvare'
+        resetOnboarding()
+        onboardingDialog.showModal()
+      },
+    })
+    onUtility = connected.showUtility
+    onProgress = connected.saveProgress
+  }
 document.querySelector('#print-shopping')!.addEventListener('click', () => {
   if (!finalized || !cart.length) return
   document.querySelector('#print-content')!.textContent = shoppingText(cart)
@@ -375,6 +579,7 @@ shoppingDialog.addEventListener('close', () => {
 })
 dialog.querySelector('.close-button')!.addEventListener('click', () => dialog.close())
 dialog.addEventListener('close', () => {
+  if (dialog.open) return
   game.clearMovement()
   const editedIndex = editingEntry ? cart.indexOf(editingEntry) : -1
   const returnTarget = editingEntry

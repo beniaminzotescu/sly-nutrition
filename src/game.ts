@@ -1,7 +1,11 @@
 import { StoreScene } from './store-scene'
 import { departments, demoCatalog, retailerCatalog, type Department, type Product } from './catalog'
+import { canTraverse, roomBottom as layoutBottom } from './catalog-layout'
 
 export function createGame(inspect: (department: Department) => void, isModalOpen: () => boolean) {
+  let activeDepartments = [...departments]
+  let activeProducts: Product[] = [...demoCatalog, ...retailerCatalog]
+  const roomBottom = () => layoutBottom(activeDepartments)
   const world = document.querySelector<HTMLDivElement>('#store-world')!
   const player = document.querySelector<HTMLDivElement>('#player')!
   const nearbyButton = document.querySelector<HTMLButtonElement>('#inspect-nearby')!
@@ -55,14 +59,15 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
     nearbyButton.disabled = !entered || !nearby
     world.tabIndex = entered ? 0 : -1
   }
+  function buildScene() {
   try {
     storeScene = new StoreScene({
       mount: document.querySelector<HTMLElement>('#scene-mount')!,
-      departments,
-      products: [...demoCatalog, ...retailerCatalog],
+      departments: activeDepartments,
+      products: activeProducts,
       inspect: id => {
         if (!entered || isModalOpen() || !threeAvailable) return
-        const department = departments.find(item => item.id === id)
+        const department = activeDepartments.find(item => item.id === id)
         clearMovement()
         if (department) inspect(department)
       },
@@ -79,6 +84,8 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
     document.querySelector<HTMLElement>('#scene-mount')!.hidden = true
     document.querySelector<HTMLElement>('#webgl-notice')!.hidden = false
   }
+  }
+  buildScene()
   document.querySelector('#scene-mount')!.addEventListener('pointerdown', () => {
     if (entered && !isModalOpen()) world.focus({ preventScroll: true })
   })
@@ -90,7 +97,9 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
   }))
   if (import.meta.hot) import.meta.hot.dispose(() => storeScene?.dispose())
   function resizeWorld() {
-    world.style.transform = `scale(${document.querySelector<HTMLElement>('.scene-viewport')!.clientWidth / 960})`
+    const viewport = document.querySelector<HTMLElement>('.scene-viewport')!
+    world.style.height = `${roomBottom() + 52}px`
+    world.style.transform = `scale(${Math.min(viewport.clientWidth / 960, viewport.clientHeight / (roomBottom() + 52))})`
   }
   new ResizeObserver(resizeWorld).observe(document.querySelector('.scene-viewport')!)
   resizeWorld()
@@ -99,22 +108,20 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
     player.style.left = `${x}px`
     player.style.top = `${y}px`
     player.style.zIndex = y < 355 ? '2' : '4'
-    nearby = departments.find(department => {
+    nearby = activeDepartments.find(department => {
       const dx = Math.max(department.x - x, 0, x - (department.x + 165))
-      const dy = Math.max(205 - y, 0, y - 365)
+      const dy = Math.max((department.y ?? 205) - y, 0, y - ((department.y ?? 205) + 160))
       return Math.hypot(dx, dy) < 105
     })
-    const available = retailerCatalog.some(product => product.department === nearby?.id)
+    const available = activeProducts.some(product => product.department === nearby?.id)
     const message = nearby ? `Departament ${nearby.name} · ${available ? 'explorează selecția' : 'produse în curând'}.` : 'În ritmul tău. Alege un departament.'
     if (location.textContent !== message) location.textContent = message
     nearbyButton.disabled = !nearby || !entered
     nearbyButton.textContent = nearby ? `Explorează ${nearby.name} ↗` : 'Apropie-te de un raft'
     document.querySelectorAll<HTMLElement>('.shelf').forEach(shelf => shelf.classList.toggle('nearby', shelf.dataset.department === nearby?.id))
   }
-  // The footprint includes avatar and trolley, regardless of their heading.
   function canMove(nextX: number, nextY: number) {
-    if (nextX < 45 || nextX > 915 || nextY < 132 || nextY > 568) return false
-    return !departments.some(department => nextX + 53 > department.x && nextX - 53 < department.x + 165 && nextY + 53 > 205 && nextY - 53 < 365)
+    return canTraverse(activeDepartments, nextX, nextY)
   }
   function tick(time: number) {
     const delta = lastTime ? Math.min((time - lastTime) / 1000, 0.1) : 0
@@ -200,6 +207,26 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
     if (entered && nearby && !isModalOpen()) { clearMovement(); inspect(nearby) }
   })
   return {
+    setCatalog(nextDepartments: Department[], nextProducts: Product[]) {
+      clearMovement()
+      activeDepartments = nextDepartments
+      activeProducts = nextProducts
+      storeScene?.dispose()
+      storeScene = undefined
+      threeAvailable = false
+      overview = false
+      x = 470
+      y = roomBottom() - 43
+      buildScene()
+      updateViewButton()
+      renderPlayer()
+      setControls()
+      resizeWorld()
+    },
+    setAvatarColor(color: string) {
+      storeScene?.setAvatarColor(color)
+      document.querySelector<HTMLElement>('.avatar-body')!.style.backgroundColor = ({ clay: '#db8c51', leaf: '#83a36a', milk: '#cfdfed' } as Record<string, string>)[color] ?? '#db8c51'
+    },
     enter() {
       entered = true
       setControls()
@@ -211,7 +238,7 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
       entered = false
       clearMovement()
       x = 470
-      y = 525
+      y = roomBottom() - 43
       overview = false
       storeScene?.resetCamera()
       updateViewButton()

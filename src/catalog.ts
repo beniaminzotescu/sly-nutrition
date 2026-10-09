@@ -1,5 +1,5 @@
-export type DepartmentId = 'lidl' | 'metro' | 'kaufland'
-export type FoodGroup = 'Cereale' | 'Leguminoase' | 'Lactate' | 'Legume' | 'Carne' | 'Paste' | 'Băuturi' | 'Biscuiți' | 'Ulei' | 'Napolitane'
+export type DepartmentId = string
+export type FoodGroup = string
 export type Nutrition = { calories: number | null; protein: number | null; fibre: number | null; sugar: number | null }
 export type AmountUnit = 'g' | 'ml'
 type ProductBase = {
@@ -13,13 +13,17 @@ type ProductBase = {
   packageUnit: AmountUnit
   unitsPerPack: number
   nutrition: Nutrition
+  departmentName?: string
+  imageUrl?: string
+  ingredients?: string | null
+  allergens?: string | null
 }
 export type Product = ProductBase & (
   | { department: 'atelier'; readiness: 'illustrative'; provenance: { status: 'illustrative'; source: string } }
   | { department: DepartmentId; readiness: 'approved'; provenance: { status: 'verified-label'; source: string } }
   | { department: DepartmentId; readiness: 'requested'; provenance: { status: 'pending-label'; source: string } }
 )
-export type Department = { id: DepartmentId; name: string; number: string; x: number; color: string }
+export type Department = { id: DepartmentId; name: string; number: string; x: number; y?: number; color: string }
 
 export const departments: Department[] = [
   { id: 'lidl', name: 'Lidl', number: '01', x: 110, color: 'grain' },

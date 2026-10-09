@@ -20,7 +20,7 @@ export const sourceLabels: Record<ValueSource, string> = {
   unknown: 'necunoscut', manual: 'introdus de utilizator / neverificat', demo: 'demo ilustrativ',
   requested: 'din denumirea furnizată / neverificat', verified: 'etichetă verificată',
 }
-const retailerNames = { lidl: 'Lidl', metro: 'Metro', kaufland: 'Kaufland', atelier: 'Atelier demo — fără magazin confirmat' }
+const retailerNames: Record<string, string> = { lidl: 'Lidl', metro: 'Metro', kaufland: 'Kaufland', atelier: 'Atelier demo — fără magazin confirmat' }
 export const shoppingNotice = 'Plan pentru o săptămână, nu meniu sau comandă. Cantitățile cumpărate nu sunt porții consumate: lista nu presupune că totul se mănâncă într-o săptămână și nu garantează că acoperă nevoile unei persoane.'
 export const demoNotice = 'Produsele, ambalajele și valorile Atelier demo sunt exemple ilustrative, nu disponibilitate confirmată la un retailer. Verifică produsul, cantitatea netă, eticheta, ingredientele și alergenii în magazin.'
 export const partialNotice = 'Total parțial: numai contribuțiile calculabile sunt însumate separat pentru fiecare nutrient; o valoare sau cantitate netă necunoscută nu înseamnă zero. Numărul de poziții necunoscute este indicat pentru fiecare total. Nu convertim g în ml.'
@@ -79,15 +79,15 @@ export function totalsText(entries: ShoppingEntry[]) {
   return `${totals.quantity} ambalaje/pachete · Masă: ${subtotalText(totals.grams, 'g')} · Volum: ${subtotalText(totals.millilitres, 'ml')}\nEnergie: ${subtotalText(totals.calories, 'kcal')} · Proteine: ${subtotalText(totals.protein, 'g')} · Fibre: ${subtotalText(totals.fibre, 'g')} · Zaharuri: ${subtotalText(totals.sugar, 'g')}`
 }
 export function shoppingGroups(entries: ShoppingEntry[]) {
-  return (['lidl', 'metro', 'kaufland', 'atelier'] as const).map(id => ({
-    id, name: retailerNames[id], entries: entries.filter(entry => entry.product.department === id),
+  return [...new Set(entries.map(entry => entry.product.department))].map(id => ({
+    id, name: entries.find(entry => entry.product.department === id)?.product.departmentName ?? retailerNames[id] ?? id, entries: entries.filter(entry => entry.product.department === id),
   })).filter(group => group.entries.length > 0)
 }
 
 // Only shopping snapshots enter exports; the profile and energy references cannot.
 export function shoppingText(entries: ShoppingEntry[]) {
   const lines = ['LISTĂ DE CUMPĂRĂTURI — PLAN PENTRU O SĂPTĂMÂNĂ', '', shoppingNotice,
-    'Concept independent, fără afiliere cu Lidl, Metro sau Kaufland. Asociere la cerere, nu disponibilitate confirmată.', '']
+    'Concept educațional independent. Verifică magazinul, varianta produsului și disponibilitatea fizică; lista nu confirmă stocuri.', '']
   for (const group of shoppingGroups(entries)) {
     lines.push(group.name.toUpperCase())
     if (group.id === 'atelier') lines.push(demoNotice)

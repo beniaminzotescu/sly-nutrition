@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
-type SceneDepartment = { id: string; name: string; color: string; number: string; x: number }
-type SceneProduct = { id: string; name: string; color: string; department: string; shape?: 'box' | 'can' | 'bottle' | 'tray' | 'wafer' | 'pasta' }
+type SceneDepartment = { id: string; name: string; color: string; number: string; x: number; y?: number }
+type SceneProduct = { id: string; name: string; color: string; department: string; imageUrl?: string; shape?: 'box' | 'can' | 'bottle' | 'tray' | 'wafer' | 'pasta' }
 type SceneOptions = {
   mount: HTMLElement
   departments: SceneDepartment[]
@@ -65,6 +65,9 @@ export class StoreScene {
   private wasWalking = false
   private lastHighlight: string | undefined
   private cartCount = 0
+  private shirtMaterial: THREE.MeshStandardMaterial | undefined
+  private disposed = false
+  private get roomFront() { return Math.max(3.7, ...this.options.departments.map(item => ((item.y ?? 205) + 415 - 350) / 80)) }
 
   constructor(options: SceneOptions) {
     this.options = options
@@ -102,7 +105,6 @@ export class StoreScene {
 
     this.buildRoom()
     this.batchArchitecture()
-    options.products.forEach(product => this.buildPackMaterial(product))
     options.departments.forEach(department => this.buildShelf(department))
     this.buildShopper()
     this.scene.add(this.shopper)
@@ -184,6 +186,12 @@ export class StoreScene {
     this.resources.push(glow)
     this.box(this.scene, [12.5, 0.32, 7.35], [0, -0.22, 0.01], graphite)
     this.box(this.scene, [12.25, 0.1, 7.15], [0, -0.02, 0.01], this.material('#506271', 0.3))
+    if (this.roomFront > 3.71) {
+      const extension = this.roomFront - 3.7
+      this.box(this.scene, [12.5, 0.32, extension], [0, -0.22, 3.7 + extension / 2], graphite)
+      this.box(this.scene, [12.25, 0.1, extension], [0, -0.02, 3.7 + extension / 2], this.material('#506271', 0.3))
+      for (const side of [-6.14, 6.14]) this.box(this.scene, [0.1, 0.3, extension], [side, 0.15, 3.7 + extension / 2], graphite)
+    }
     const tileGeometry = new THREE.BoxGeometry(0.985, 0.014, 0.875)
     const tiles = new THREE.InstancedMesh(tileGeometry, this.material('#ffffff', 0.25), 96)
     const matrix = new THREE.Matrix4()
@@ -273,6 +281,25 @@ export class StoreScene {
     const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.55 })
     this.resources.push(material)
     this.packMaterials.set(`${product.department}:${product.id}`, material)
+    if (product.imageUrl) {
+      const image = new Image()
+      image.crossOrigin = 'anonymous'
+      image.referrerPolicy = 'no-referrer'
+      image.onload = () => {
+        if (this.disposed) return
+        const photo = this.texture(256, 512, context => {
+          context.fillStyle = palette.background
+          context.fillRect(0, 0, 256, 512)
+          const ratio = Math.min(256 / image.naturalWidth, 512 / image.naturalHeight)
+          const width = image.naturalWidth * ratio, height = image.naturalHeight * ratio
+          context.drawImage(image, (256 - width) / 2, (512 - height) / 2, width, height)
+        })
+        material.map = photo
+        material.needsUpdate = true
+        this.dirty = true
+      }
+      image.src = product.imageUrl
+    }
   }
 
   private batchArchitecture() {
@@ -308,6 +335,7 @@ export class StoreScene {
       else geometry = new THREE.BoxGeometry(0.27, 0.46, 0.16)
       this.packageGeometries.set(shape, geometry)
     }
+    if (!this.packMaterials.has(`${product.department}:${product.id}`)) this.buildPackMaterial(product)
     const pack = new THREE.Mesh(geometry, this.packMaterials.get(`${product.department}:${product.id}`))
     pack.castShadow = true
     return pack
@@ -316,7 +344,7 @@ export class StoreScene {
   private buildShelf(product: SceneDepartment) {
     const items = this.options.products.filter(item => item.department === product.id)
     const shelf = new THREE.Group()
-    shelf.position.set((product.x + 82.5 - 480) / 80, 0, (285 - 350) / 80)
+    shelf.position.set((product.x + 82.5 - 480) / 80, 0, ((product.y ?? 205) + 80 - 350) / 80)
     shelf.userData.departmentId = product.id
     this.scene.add(shelf)
     this.shelfTargets.push(shelf)
@@ -333,7 +361,7 @@ export class StoreScene {
     }
     const palette = palettes[product.color] ?? palettes.grain!
     if (items.length) {
-      for (let index = 0; index < Math.max(20, items.length); index++) {
+      for (let index = 0; index < 20; index++) {
         const item = items[index % items.length]!
         const pack = this.packageMesh(item)
         pack.geometry.computeBoundingBox()
@@ -375,6 +403,7 @@ export class StoreScene {
     this.shopper.add(this.avatar)
     const skin = this.material('#e3aa7c')
     const shirt = this.material('#db8c51')
+    this.shirtMaterial = shirt
     const trousers = this.material('#202d41')
     const shoes = this.material('#d9e5ed')
     const hair = this.material('#4a382b')
@@ -465,7 +494,7 @@ export class StoreScene {
     } else {
       const distance = this.camera.aspect < 1.25 ? 20 : 17.7
       this.cameraGoal.set(Math.sin(this.yaw) * distance, 24, Math.cos(this.yaw) * distance)
-      this.lookGoal.set(0, 0.52, -0.28)
+      this.lookGoal.set(0, 0.52, -0.28 + (this.roomFront - 3.7) / 2)
     }
     const snap = !this.cameraReady || this.reducedMotion.matches || paused
     const alpha = snap ? 1 : 1 - Math.exp(-elapsed * 12)
@@ -483,7 +512,7 @@ export class StoreScene {
     let extent = 0
     for (const x of [-6.3, 6.3]) {
       for (const y of [0, 3.2]) {
-        for (const z of [-3.7, 3.7]) {
+        for (const z of [-3.7, this.roomFront]) {
           const point = new THREE.Vector3(x, y, z).project(this.camera)
           extent = Math.max(extent, Math.abs(point.x), Math.abs(point.y))
         }
@@ -598,7 +627,13 @@ export class StoreScene {
     this.options.availability(true)
   }
 
+  setAvatarColor(color: string) {
+    this.shirtMaterial?.color.set(({ clay: '#db8c51', leaf: '#83a36a', milk: '#cfdfed' } as Record<string, string>)[color] ?? '#db8c51')
+    this.dirty = true
+  }
+
   dispose() {
+    this.disposed = true
     this.resizeObserver.disconnect()
     this.reducedMotion.removeEventListener('change', this.invalidate)
     this.renderer.domElement.removeEventListener('pointerup', this.selectShelf)

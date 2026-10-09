@@ -1,0 +1,5 @@
+project_id = "sly-nutrition"
+
+[functions.delete-account]
+# The function verifies the bearer JWT using Auth.getUser (also compatible with signing keys).
+verify_jwt = false
