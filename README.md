@@ -31,15 +31,15 @@ Activity multipliers are rough educational assumptions, not individualized measu
 
 ## Virtual store and weekly shopping list
 
-- Enter a WebGL-rendered 3D store with a visible player, trolley, and Lidl, Metro, and Kaufland departments.
-- Retailer departments are independent concepts, not confirmed collaborations. Their product selections will be populated gradually from approved, sourced labels; empty departments must not imply current availability.
+- Enter a WebGL-rendered 3D store with a visible player, trolley, and Lidl, Metro, and Kaufland departments. The original futuristic supermarket scene uses a following camera and an overview option; it is not a recreation of GTA or a photorealistic commercial game.
+- Retailer departments are independent concepts, not confirmed collaborations. Requested products appear with unverified labels and availability clearly identified; a user-supplied name is not an approved nutrition source.
 - A separate generic demonstration workshop provides illustrative foods for testing the shopping-list experience without attributing them to a retailer.
 - Explore using arrow keys / WASD or on-screen direction controls. Accessible product buttons provide an alternative to moving through the store.
-- Rotate the camera using the view buttons, click a 3D department, or press E near one to explore its selection.
-- Inspect the front and back of a concept package and explore illustrative nutrition values. Purchased package weight is distinct from any portion used for nutrition comparisons. Real ingredients and allergens are not available in this prototype.
+- Rotate the camera using the view buttons or Q/R, switch between follow and overview with V, click a 3D department, or press E near one to explore its selection. The same camera actions have touch controls.
+- Inspect the front and back of a concept package and explore nutrition values when available. Purchased package mass or volume is distinct from any portion used for nutrition comparisons. Real ingredients and allergens are not available in this prototype.
 - Add purchased packages to the weekly list, adjust quantities, and remove entries. Totals include energy, protein, fibre, and represented food groups; variety is not inferred from the number of retailer departments.
-- Each list entry retains the product, retailer association, purchased package weight, and all nutrition values used when it was added; later input edits do not change existing entries. Merge only identical purchase/nutrition snapshots.
-- Review and print the shopping list grouped by store, with product names, package quantities, and purchased weights. Generic demonstration entries remain explicitly separate from verified retailer products in the list and any export.
+- Each list entry retains the product, retailer association, purchased quantity and unit, and nutrition values/provenance used when it was added. Unsaved edits and other product selections do not change it; “Editează eticheta / cantitatea netă” explicitly saves corrections to that entry. Merge only identical purchase/nutrition snapshots.
+- Review and print the shopping list grouped by store, with product names, package quantities, and purchased mass or volume. Demonstration, pending-label, and manually entered information remain distinguishable in the list and exports.
 - Product dialogs retain editable, equal-portion calorie and sugar comparisons with input validation and higher, lower, or equal results.
 - Responsive controls, native keyboard-accessible dialogs, and reduced-motion support.
 
@@ -47,10 +47,29 @@ The shopping list is a planning tool, not a food log, dietary prescription, or n
 
 The 3D view requires WebGL2. If it is unavailable or its context is lost, a 2D store and accessible product controls keep inspection and cart interactions available.
 
+## Requested retailer products
+
+These eight entries reflect the requested names and retailer assignments, not verified stock, nutrition, or universal suitability:
+
+| Department | Requested product | Known package information |
+| --- | --- | --- |
+| Metro | GOLFERA Piept Curcan Feliat 80 g | 80 g |
+| Metro | REGGIA Tortellini cu Carne 500 g | 500 g |
+| Metro | COCA-COLA Zero Cofeina Doza SGR 4 x 0,33 L | 4 × 330 ml = 1,320 ml per multipack |
+| Metro | COCA-COLA ZERO ZAHAR Doza SGR 12 x 0,25 L | 12 × 250 ml = 3,000 ml per multipack |
+| Lidl | Biscuiți de Crăciun cocos/migdale | Size and exact variant to confirm |
+| Lidl | Ulei de măsline extravirgin / rafinat și virgin | Volume and exact variant to confirm |
+| Kaufland | Napolitana cu crema cu cacao Sly, fara zahar, 20 g | 20 g |
+| Kaufland | Napolitana cu crema cu vanilie Sly, fara zahar, 20 g | 20 g |
+
+Missing nutrition or package sizes are unknown, not zero. Such items can still be planned by name and count. Totals must identify incomplete information per nutrient rather than imply that a partial sum is the total energy of the basket. Explicitly entered zero is distinct from a blank field. Product-name claims such as “ZERO ZAHAR” are preserved as supplied names, not adopted as verified nutrient values.
+
+Drinks use millilitres and nutrition per 100 ml. Solids use grams and nutrition per 100 g. Do not convert between mass and volume without a sourced density. A shopping quantity for a cola multipack counts multipacks, not individual cans. Comparison portions remain separate and use the same unit for both examples.
+
 ## Content boundaries
 
-Packaging illustrations are original concepts, not official product photographs. Demonstration nutrition values must never be presented as verified product data. Comparisons use `(comparison value − alternative value) × portion / 100`, with both products measured at the same portion size. Shopping totals use `value per 100 g × package net weight in g / 100 × package count`, summed across entries without rounding intermediate values. A portion comparison must not silently change the purchased package weight.
+Packaging illustrations are original concepts, not official product photographs. Demonstration and manually entered nutrition values must never be presented as verified product data. Comparisons use `(comparison value − alternative value) × portion / 100`, with both products measured at the same portion size and unit. Shopping totals use `value per 100 units × net units per package / 100 × package count`, summed across known entries without rounding intermediate values; unknown contributions remain explicitly excluded. A portion comparison must not silently change the purchased package size.
 
-Before adding real retailer products, obtain current nutrition labels, ingredients/allergens, provenance, permission for any artwork, and confirmation of the retailer association. Record portion units and food groups consistently. Curate products for balanced-meal exploration without claiming that any food is universally healthy, suitable for every medical condition, or allergen-free.
+Before promoting requested entries to verified products, obtain current nutrition labels, ingredients/allergens, provenance, permission for any artwork, and confirmation of the retailer association. Record portion units and food groups consistently. Curate products for balanced-meal exploration without claiming that any food is universally healthy, suitable for every medical condition, or allergen-free.
 
 This is an independent concept, not an official retailer launch or nutritional advice. No weight-loss or medical outcomes are promised.

@@ -1,7 +1,8 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 type SceneDepartment = { id: string; name: string; color: string; number: string; x: number }
-type SceneProduct = { id: string; name: string; color: string; department: string }
+type SceneProduct = { id: string; name: string; color: string; department: string; shape?: 'box' | 'can' | 'bottle' | 'tray' | 'wafer' | 'pasta' }
 type SceneOptions = {
   mount: HTMLElement
   departments: SceneDepartment[]
@@ -16,6 +17,18 @@ const palettes: Record<string, { background: string; ink: string }> = {
   clay: { background: '#e5c399', ink: '#805132' },
   milk: { background: '#eef0e6', ink: '#3f6158' },
 }
+const packageShapes: Record<string, NonNullable<SceneProduct['shape']>> = {
+  'golfera-turkey': 'tray',
+  'reggia-tortellini': 'pasta',
+  'cola-zero-caffeine': 'can',
+  'cola-zero-sugar': 'can',
+  'lidl-olive-oil': 'bottle',
+  'sly-cocoa-wafer': 'wafer',
+  'sly-vanilla-wafer': 'wafer',
+  lentils: 'can',
+  yogurt: 'can',
+  vegetables: 'tray',
+}
 
 export class StoreScene {
   private readonly options: SceneOptions
@@ -29,7 +42,7 @@ export class StoreScene {
   private readonly shelfTargets: THREE.Object3D[] = []
   private readonly shelfHighlights = new Map<string, THREE.Mesh>()
   private readonly packMaterials = new Map<string, THREE.MeshStandardMaterial>()
-  private readonly packGeometry = new THREE.BoxGeometry(0.29, 0.61, 0.13)
+  private readonly packageGeometries = new Map<string, THREE.BufferGeometry>()
   private readonly raycaster = new THREE.Raycaster()
   private readonly pointer = new THREE.Vector2()
   private readonly counter: THREE.Sprite
@@ -38,7 +51,14 @@ export class StoreScene {
   private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
   private dirty = true
   private available = true
-  private yaw = 0.32
+  private yaw = 0.24
+  private overview = false
+  private readonly cameraGoal = new THREE.Vector3()
+  private readonly lookGoal = new THREE.Vector3()
+  private readonly cameraLook = new THREE.Vector3()
+  private cameraReady = false
+  private cameraMoving = false
+  private cameraTime = 0
   private heading = 0
   private lastX = NaN
   private lastY = NaN
@@ -50,20 +70,21 @@ export class StoreScene {
     this.options = options
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power' })
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75))
-    this.renderer.setClearColor('#dce3c8')
+    this.renderer.setClearColor('#101d30')
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.45
+    this.renderer.toneMappingExposure = 1.25
     this.renderer.domElement.setAttribute('aria-hidden', 'true')
     this.renderer.domElement.dataset.renderer = 'three-webgl'
     options.mount.append(this.renderer.domElement)
+    options.mount.dataset.view = 'follow'
     this.renderer.domElement.addEventListener('pointerup', this.selectShelf)
     this.renderer.domElement.addEventListener('webglcontextlost', this.contextLost)
     this.renderer.domElement.addEventListener('webglcontextrestored', this.contextRestored)
 
-    this.scene.add(new THREE.HemisphereLight('#fff9e7', '#8c9c70', 2.2))
-    const sun = new THREE.DirectionalLight('#fff5d9', 4)
+    this.scene.add(new THREE.HemisphereLight('#cdefff', '#566375', 2.3))
+    const sun = new THREE.DirectionalLight('#ffe4c6', 3.2)
     sun.position.set(-3, 10, 7)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
@@ -75,17 +96,18 @@ export class StoreScene {
     sun.shadow.bias = -0.0001
     sun.shadow.radius = 3
     this.scene.add(sun)
-    const fill = new THREE.DirectionalLight('#e2efca', 1.1)
+    const fill = new THREE.DirectionalLight('#80dfff', 1.8)
     fill.position.set(8, 5, -4)
     this.scene.add(fill)
 
     this.buildRoom()
+    this.batchArchitecture()
     options.products.forEach(product => this.buildPackMaterial(product))
     options.departments.forEach(department => this.buildShelf(department))
     this.buildShopper()
     this.scene.add(this.shopper)
     this.counter = this.textSprite('0', '#234b3b', '#f7f9e9', 0.42, 0.28)
-    this.counter.position.set(0.42, 1.1, -0.19)
+    this.counter.position.set(0.36, 1.18, -0.28)
     this.counter.visible = false
     this.shopper.add(this.counter)
     this.resizeObserver = new ResizeObserver(this.resize)
@@ -96,7 +118,7 @@ export class StoreScene {
   }
 
   private material(color: string, metalness = 0) {
-    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness })
+    const material = new THREE.MeshStandardMaterial({ color, roughness: metalness ? 0.34 : 0.7, metalness })
     this.resources.push(material)
     return material
   }
@@ -156,115 +178,139 @@ export class StoreScene {
   }
 
   private buildRoom() {
-    const cream = this.material('#e9e6cd')
-    const green = this.material('#294b37')
-    const trim = this.material('#173f2f')
-    this.box(this.scene, [12.5, 0.32, 7.35], [0, -0.22, 0.01], this.material('#9fae88'))
-    this.box(this.scene, [12.25, 0.1, 7.15], [0, -0.02, 0.01], cream)
-    const tileGeometry = new THREE.BoxGeometry(0.995, 0.014, 0.885)
-    const tileMaterial = this.material('#d4dcbd')
-    const tiles = new THREE.InstancedMesh(tileGeometry, tileMaterial, 96)
+    const graphite = this.material('#182333', 0.45)
+    const metal = this.material('#687f90', 0.7)
+    const glow = new THREE.MeshStandardMaterial({ color: '#b6f5ff', emissive: '#49c8e3', emissiveIntensity: 2.4 })
+    this.resources.push(glow)
+    this.box(this.scene, [12.5, 0.32, 7.35], [0, -0.22, 0.01], graphite)
+    this.box(this.scene, [12.25, 0.1, 7.15], [0, -0.02, 0.01], this.material('#506271', 0.3))
+    const tileGeometry = new THREE.BoxGeometry(0.985, 0.014, 0.875)
+    const tiles = new THREE.InstancedMesh(tileGeometry, this.material('#ffffff', 0.25), 96)
     const matrix = new THREE.Matrix4()
     let index = 0
     for (let column = 0; column < 12; column++) {
       for (let row = 0; row < 8; row++) {
         matrix.makeTranslation(column - 5.5, 0.039, row * 0.89 - 3.12)
         tiles.setMatrixAt(index, matrix)
-        tiles.setColorAt(index++, new THREE.Color((column + row) % 2 ? '#e9e7ce' : '#dce2c3'))
+        tiles.setColorAt(index++, new THREE.Color((column + row) % 2 ? '#536678' : '#4b5e70'))
       }
     }
     tiles.receiveShadow = true
     this.resources.push(tileGeometry, tiles)
     this.scene.add(tiles)
-    this.box(this.scene, [12.4, 3, 0.18], [0, 1.5, -3.52], green)
-    this.box(this.scene, [12.48, 0.1, 0.29], [0, 3.03, -3.52], trim)
-    this.box(this.scene, [12.3, 0.16, 0.12], [0, 0.13, -3.36], trim)
-    this.box(this.scene, [0.16, 2.2, 1.7], [-6.14, 1.1, -2.71], green)
-    this.box(this.scene, [0.16, 0.32, 5.3], [-6.14, 0.16, 0.8], cream)
-    this.box(this.scene, [0.16, 0.32, 7], [6.14, 0.16, -0.05], cream)
-    for (let i = 0; i < 20; i++) this.box(this.scene, [0.027, 2.85, 0.025], [i * 0.61 - 5.8, 1.53, -3.414], this.material('#3f6144'))
-    this.sign(this.scene, 3.2, 0.8, [-3.75, 2.04, -3.38], context => {
-      context.fillStyle = '#eef3d9'
-      context.font = '600 110px system-ui'
-      context.fillText('Atelier', 40, 140)
-      context.font = '32px system-ui'
-      context.fillText('D E  M E S E', 45, 204)
-    })
-    this.sign(this.scene, 4.3, 1.075, [0.7, 2.05, -3.38], context => {
-      context.fillStyle = '#f1f2db'
-      context.font = '58px system-ui'
-      context.fillText('O pauză mică.', 70, 100)
-      context.fillStyle = '#cbdba7'
-      context.font = 'italic 63px Georgia'
-      context.fillText('O lume de descoperit.', 70, 185)
-    })
-    this.sign(this.scene, 0.9, 0.9, [4.75, 2, -3.38], context => {
-      context.fillStyle = '#cbdda4'
+    this.box(this.scene, [12.4, 0.7, 0.18], [0, 0.35, -3.52], graphite)
+    const glass = new THREE.MeshPhysicalMaterial({ color: '#7fb9d2', metalness: 0.25, roughness: 0.14, transparent: true, opacity: 0.18, depthWrite: false })
+    this.resources.push(glass)
+    this.box(this.scene, [12.2, 2.4, 0.06], [0, 1.9, -3.53], glass)
+    for (let i = 0; i < 9; i++) this.box(this.scene, [0.055, 3.5, 0.12], [i * 1.53 - 6.12, 1.75, -3.5], metal)
+    this.box(this.scene, [12.45, 0.46, 0.24], [0, 3.37, -3.5], graphite)
+    this.box(this.scene, [12.2, 0.025, 0.06], [0, 3.1, -3.35], glow)
+    this.sign(this.scene, 4.2, 0.42, [0, 3.38, -3.36], context => {
+      context.fillStyle = '#d9f8ff'
       context.textAlign = 'center'
-      context.font = '240px Georgia'
-      context.fillText('✳', 512, 215)
+      context.font = '600 100px system-ui'
+      context.fillText('ATELIER / NIGHT MARKET', 512, 163)
     })
-    this.box(this.scene, [2.4, 0.027, 0.8], [0, 0.057, 2.94], this.material('#426348'))
+    // Architecture remains outside the same walkable footprint as the 2D fallback.
+    for (const side of [-6.14, 6.14]) {
+      this.box(this.scene, [0.1, 0.3, 7], [side, 0.15, -0.05], graphite)
+      this.box(this.scene, [0.04, 0.02, 6.9], [side, 0.31, -0.05], glow)
+      this.box(this.scene, [0.1, 3.2, 0.1], [side, 1.6, 3.35], metal)
+    }
+    const buildings = this.material('#101c30')
+    const windowLight = new THREE.MeshBasicMaterial({ color: '#f0c891' })
+    this.resources.push(windowLight)
+    for (let i = 0; i < 14; i++) {
+      const bx = i * 1.35 - 8.8
+      const height = 2.5 + (i * 7 % 5) * 0.65
+      this.box(this.scene, [1.08, height, 0.9], [bx, height / 2 - 0.2, -6.8 - i % 3], buildings)
+      for (let row = 0; row < 5; row++) {
+        for (let col = 0; col < 3; col++) {
+          if ((i + row + col) % 3 !== 0) this.box(this.scene, [0.08, 0.12, 0.02], [bx + col * 0.26 - 0.26, 0.7 + row * 0.37, -6.33 - i % 3], windowLight)
+        }
+      }
+    }
+    for (const department of this.options.departments) {
+      const sx = (department.x + 82.5 - 480) / 80
+      this.box(this.scene, [1.9, 0.045, 0.16], [sx, 3.85, -0.8], graphite)
+      this.box(this.scene, [1.8, 0.018, 0.12], [sx, 3.82, -0.8], glow)
+      for (const side of [-0.7, 0.7]) this.box(this.scene, [0.015, 0.55, 0.015], [sx + side, 3.58, -3.4], metal)
+      this.box(this.scene, [1.8, 0.008, 0.035], [sx, 0.053, 0.63], glow)
+    }
+    this.box(this.scene, [2.4, 0.027, 0.8], [0, 0.057, 2.94], graphite)
     const entrance = this.sign(this.scene, 2.15, 0.53, [0, 0.075, 2.94], context => {
-      context.fillStyle = '#ecf1d5'
+      context.fillStyle = '#c6f5ff'
       context.textAlign = 'center'
       context.font = '40px system-ui'
       context.fillText('↑   I N T R A R E   ↑', 512, 145)
     })
     entrance.rotation.x = -Math.PI / 2
-    const rug = this.sign(this.scene, 2.6, 0.65, [0, 0.057, 1.57], context => {
-      context.strokeStyle = '#9aa984'
-      context.lineWidth = 3
-      context.beginPath()
-      context.ellipse(512, 128, 485, 117, 0, 0, Math.PI * 2)
-      context.stroke()
-      context.fillStyle = '#879773'
-      context.textAlign = 'center'
-      context.font = '36px system-ui'
-      context.fillText('S T A Y  C U R I O U S   ↗', 512, 143)
-    })
-    rug.rotation.x = -Math.PI / 2
-    this.buildPlant(-5.5, -2.7)
-    this.buildPlant(5.55, -2.7)
-  }
-
-  private buildPlant(x: number, z: number) {
-    const plant = new THREE.Group()
-    plant.position.set(x, 0, z)
-    this.scene.add(plant)
-    this.mesh(new THREE.CylinderGeometry(0.3, 0.23, 0.46, 12), this.material('#c5a578'), plant, 0, 0.25, 0)
-    const leafMaterial = this.material('#6b8b4c')
-    for (let i = 0; i < 7; i++) {
-      const angle = i / 7 * Math.PI * 2
-      const leaf = this.mesh(new THREE.SphereGeometry(0.22, 8, 6), leafMaterial, plant, Math.cos(angle) * 0.18, 0.85 + i % 2 * 0.18, Math.sin(angle) * 0.18)
-      leaf.scale.set(0.7, 2.4, 0.3)
-      leaf.rotation.z = Math.cos(angle) * 0.48
-      leaf.rotation.x = Math.sin(angle) * 0.48
-    }
   }
 
   private buildPackMaterial(product: SceneProduct) {
-    const palette = palettes[product.color]!
+    const palette = palettes[product.color] ?? { background: '#d4e7ef', ink: '#18354b' }
     const texture = this.texture(256, 512, context => {
       context.fillStyle = palette.background
       context.fillRect(0, 0, 256, 512)
       context.fillStyle = palette.ink
       context.textAlign = 'center'
-      context.font = 'bold 36px system-ui'
-      context.fillText('ATELIER', 128, 110)
-      context.font = '24px system-ui'
-      context.fillText(product.department === 'atelier' ? 'DEMO' : 'PRODUS', 128, 160)
-      context.beginPath()
-      context.arc(128, 290, 64, 0, Math.PI * 2)
-      context.stroke()
-      context.font = '80px Georgia'
-      context.fillText('✳', 128, 320)
-      context.font = '18px system-ui'
-      context.fillText('CONCEPT VIZUAL', 128, 450)
+      context.fillRect(18, 30, 220, 12)
+      context.font = 'bold 22px system-ui'
+      const words = product.name.split(/\s+/)
+      const lines: string[] = []
+      let line = ''
+      for (const word of words) {
+        if (context.measureText(`${line} ${word}`.trim()).width > 218 && line) { lines.push(line); line = '' }
+        line = `${line} ${word}`.trim()
+      }
+
+      if (line) lines.push(line)
+      const lineHeight = Math.min(34, 310 / Math.max(lines.length, 1))
+      lines.forEach((text, i) => context.fillText(text, 128, 112 + i * lineHeight, 218))
+      context.font = '15px system-ui'
+      context.fillText('AMBALAJ ILUSTRATIV', 128, 455)
     })
     const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.55 })
     this.resources.push(material)
     this.packMaterials.set(`${product.department}:${product.id}`, material)
+  }
+
+  private batchArchitecture() {
+    const batches = new Map<THREE.Material, THREE.Mesh[]>()
+    this.scene.updateMatrixWorld(true)
+    for (const object of this.scene.children) {
+      if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh || Array.isArray(object.material) || object.material.transparent) continue
+      const batch = batches.get(object.material) ?? []
+      batch.push(object)
+      batches.set(object.material, batch)
+    }
+    for (const [material, meshes] of batches) {
+      if (meshes.length < 2) continue
+      const geometries = meshes.map(mesh => mesh.geometry.clone().applyMatrix4(mesh.matrixWorld))
+      const geometry = mergeGeometries(geometries)
+      geometries.forEach(item => item.dispose())
+      if (!geometry) continue
+      meshes.forEach(mesh => this.scene.remove(mesh))
+      this.mesh(geometry, material, this.scene, 0, 0, 0)
+    }
+  }
+
+  private packageMesh(product: SceneProduct) {
+    const shape = product.shape ?? packageShapes[product.id] ?? 'box'
+    let geometry = this.packageGeometries.get(shape)
+    if (!geometry) {
+      if (shape === 'can') geometry = new THREE.CylinderGeometry(0.125, 0.125, 0.32, 16)
+      else if (shape === 'bottle') {
+        geometry = new THREE.LatheGeometry([new THREE.Vector2(0, -0.27), new THREE.Vector2(0.1, -0.27), new THREE.Vector2(0.105, 0.09), new THREE.Vector2(0.045, 0.18), new THREE.Vector2(0.045, 0.27), new THREE.Vector2(0, 0.27)], 16)
+      } else if (shape === 'tray') geometry = new THREE.BoxGeometry(0.32, 0.18, 0.23)
+      else if (shape === 'wafer') geometry = new THREE.BoxGeometry(0.28, 0.43, 0.09)
+      else if (shape === 'pasta') geometry = new THREE.BoxGeometry(0.24, 0.59, 0.17)
+      else geometry = new THREE.BoxGeometry(0.27, 0.46, 0.16)
+      this.packageGeometries.set(shape, geometry)
+    }
+    const pack = new THREE.Mesh(geometry, this.packMaterials.get(`${product.department}:${product.id}`))
+    pack.castShadow = true
+    return pack
   }
 
   private buildShelf(product: SceneDepartment) {
@@ -274,29 +320,34 @@ export class StoreScene {
     shelf.userData.departmentId = product.id
     this.scene.add(shelf)
     this.shelfTargets.push(shelf)
-    const cream = this.material('#eae3ca')
-    const edge = this.material('#f6efd8')
-    const green = this.material('#788867')
+    const cream = this.material('#334253', 0.45)
+    const edge = this.material('#8799a7', 0.7)
+    const green = this.material('#172330', 0.5)
     this.box(shelf, [2.06, 0.18, 2], [0, 0.16, 0], green)
     this.box(shelf, [2.02, 0.12, 1.97], [0, 0.31, 0], cream)
     this.box(shelf, [2.02, 0.11, 1.97], [0, 1.09, 0], edge)
     this.box(shelf, [2.02, 0.1, 0.1], [0, 1.93, -0.89], edge)
     this.box(shelf, [1.94, 1.5, 0.08], [0, 1.1, -0.85], cream)
-    for (const side of [-0.98, 0.98]) this.box(shelf, [0.08, 1.76, 1.96], [side, 1.08, 0], edge)
-    const palette = palettes[product.color]!
-    items.slice(0, 20).forEach((item, index) => {
-      const pack = new THREE.Mesh(this.packGeometry, this.packMaterials.get(`${item.department}:${item.id}`)!)
-      pack.position.set((index % 5 - 2) * 0.36, 0.69 + Math.floor(index / 10) * 0.78, 0.58 - Math.floor(index / 5) % 2 * 0.7)
-      pack.castShadow = true
-      shelf.add(pack)
-    })
+    for (const side of [-0.98, 0.98]) {
+      for (const z of [-0.9, 0.9]) this.box(shelf, [0.065, 1.76, 0.065], [side, 1.08, z], edge)
+    }
+    const palette = palettes[product.color] ?? palettes.grain!
+    if (items.length) {
+      for (let index = 0; index < Math.max(20, items.length); index++) {
+        const item = items[index % items.length]!
+        const pack = this.packageMesh(item)
+        pack.geometry.computeBoundingBox()
+        pack.position.set((index % 5 - 2) * 0.36, 0.37 - pack.geometry.boundingBox!.min.y + Math.floor(index / 10) * 0.78, 0.63 - Math.floor(index / 5) % 2 * 0.65)
+        shelf.add(pack)
+      }
+    }
     this.box(shelf, [1.88, 0.46, 0.1], [0, 2.05, -0.83], this.material(palette.background))
     this.sign(shelf, 1.8, 0.45, [0, 2.05, -0.77], context => {
       context.fillStyle = palette.ink
       context.font = '25px system-ui'
       context.fillText(`${product.number} / DEPARTAMENT`, 45, 55)
-      context.font = '116px Georgia'
-      context.fillText(product.name, 45, 168)
+      context.font = 'bold 106px system-ui'
+      context.fillText(product.name, 45, 168, 840)
       context.font = '25px system-ui'
       context.fillText(items.length ? 'SELECȚIE PENTRU MESE' : 'PRODUSE ÎN CURÂND', 45, 219)
       context.font = '60px system-ui'
@@ -304,14 +355,14 @@ export class StoreScene {
     })
     for (const height of [0.32, 1.09]) {
       this.sign(shelf, 1.91, 0.14, [0, height, 1.007], context => {
-        context.fillStyle = '#f7f2dc'
+        context.fillStyle = '#c6eff7'
         context.fillRect(0, 0, 1024, 256)
-        context.fillStyle = '#556548'
+        context.fillStyle = '#182d40'
         context.font = '70px system-ui'
         context.fillText(items.length ? 'CONSULTĂ ETICHETA' : 'PRODUSE ÎN CURÂND', 33, 158)
       })
     }
-    const haloMaterial = new THREE.MeshBasicMaterial({ color: '#b4d17e', transparent: true, opacity: 0.48, depthWrite: false })
+    const haloMaterial = new THREE.MeshBasicMaterial({ color: '#58d9e8', transparent: true, opacity: 0.32, depthWrite: false })
     this.resources.push(haloMaterial)
     const halo = this.mesh(new THREE.PlaneGeometry(2.25, 2.18), haloMaterial, this.scene, shelf.position.x, 0.055, shelf.position.z)
     halo.rotation.x = -Math.PI / 2
@@ -320,58 +371,67 @@ export class StoreScene {
   }
 
   private buildShopper() {
-    this.avatar.position.set(-0.18, 0, 0.07)
+    this.avatar.position.set(0, 0, 0.29)
     this.shopper.add(this.avatar)
     const skin = this.material('#e3aa7c')
-    const shirt = this.material('#dc8650')
-    const trousers = this.material('#35594c')
-    const shoes = this.material('#f4eddb')
+    const shirt = this.material('#db8c51')
+    const trousers = this.material('#202d41')
+    const shoes = this.material('#d9e5ed')
     const hair = this.material('#4a382b')
     for (const side of [-1, 1]) {
       const leg = new THREE.Group()
-      leg.position.set(side * 0.092, 0.35, 0)
+      leg.position.set(side * 0.092, 0.66, 0)
       this.avatar.add(leg)
-      this.mesh(new THREE.CapsuleGeometry(0.072, 0.19, 4, 8), trousers, leg, 0, -0.12, 0)
-      this.box(leg, [0.14, 0.085, 0.24], [0, -0.29, -0.035], shoes)
+      this.mesh(new THREE.CapsuleGeometry(0.072, 0.4, 4, 8), trousers, leg, 0, -0.25, 0)
+      this.box(leg, [0.14, 0.085, 0.24], [0, -0.58, -0.035], shoes)
       this.legs.push(leg)
     }
-    this.mesh(new THREE.CapsuleGeometry(0.18, 0.25, 4, 12), shirt, this.avatar, 0, 0.63, 0)
-    this.mesh(new THREE.SphereGeometry(0.195, 16, 12), skin, this.avatar, 0, 1.04, 0)
-    const hairMesh = this.mesh(new THREE.SphereGeometry(0.203, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), hair, this.avatar, 0, 1.083, 0)
+    const torso = this.mesh(new THREE.CapsuleGeometry(0.17, 0.28, 6, 12), shirt, this.avatar, 0, 0.95, 0)
+    torso.scale.z = 0.7
+    this.box(this.avatar, [0.014, 0.34, 0.01], [0, 0.96, -0.123], this.material('#354559', 0.3))
+    this.box(this.avatar, [0.14, 0.11, 0.014], [0.08, 0.85, -0.124], shirt)
+    this.mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.12, 10), skin, this.avatar, 0, 1.28, 0)
+    const head = this.mesh(new THREE.SphereGeometry(0.13, 16, 12), skin, this.avatar, 0, 1.43, 0)
+    head.scale.y = 1.15
+    const hairMesh = this.mesh(new THREE.SphereGeometry(0.136, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), hair, this.avatar, 0, 1.466, 0)
     hairMesh.rotation.z = 0.1
     const eyes = this.material('#47382c')
-    for (const side of [-1, 1]) this.mesh(new THREE.SphereGeometry(0.017, 6, 4), eyes, this.avatar, side * 0.067, 1.043, -0.178)
     for (const side of [-1, 1]) {
-      const arm = this.mesh(new THREE.CapsuleGeometry(0.065, 0.21, 4, 8), shirt, this.avatar, side * 0.2, 0.7, -0.05)
-      arm.rotation.x = -0.85
-      this.mesh(new THREE.SphereGeometry(0.07, 8, 6), skin, this.avatar, side * 0.2, 0.59, -0.18)
+      this.mesh(new THREE.SphereGeometry(0.009, 6, 4), eyes, this.avatar, side * 0.043, 1.44, -0.118)
+      this.mesh(new THREE.SphereGeometry(0.025, 8, 6), skin, this.avatar, side * 0.124, 1.43, 0)
+    }
+    this.mesh(new THREE.SphereGeometry(0.023, 8, 6), skin, this.avatar, 0, 1.414, -0.127)
+    for (const side of [-1, 1]) {
+      const arm = this.mesh(new THREE.CapsuleGeometry(0.06, 0.24, 4, 8), shirt, this.avatar, side * 0.2, 1.04, -0.08)
+      arm.rotation.x = 0.55
+      const forearm = this.mesh(new THREE.CapsuleGeometry(0.044, 0.17, 4, 8), skin, this.avatar, side * 0.2, 0.92, -0.23)
+      forearm.rotation.x = 1.4
+      this.mesh(new THREE.SphereGeometry(0.052, 8, 6), skin, this.avatar, side * 0.2, 0.9, -0.32)
     }
     const trolley = new THREE.Group()
-    trolley.position.set(0.23, 0, -0.2)
+    trolley.position.set(0, 0, -0.35)
     this.shopper.add(trolley)
-    const metal = this.material('#8daca0', 0.35)
-    const handle = this.material('#35594b')
+    const metal = this.material('#a2b8c8', 0.8)
+    const handle = this.material('#52c5d8')
     const tyre = this.material('#354439')
-    this.box(trolley, [0.43, 0.025, 0.5], [0, 0.37, 0], metal)
+    this.box(trolley, [0.43, 0.025, 0.5], [0, 0.49, 0], metal)
+    this.box(trolley, [0.39, 0.025, 0.46], [0, 0.24, 0], metal)
     for (const z of [-0.25, 0.25]) {
-      for (const height of [0.39, 0.54, 0.71]) this.box(trolley, [0.46, 0.022, 0.022], [0, height, z], metal)
-      for (let i = 0; i < 5; i++) this.box(trolley, [0.013, 0.34, 0.015], [i * 0.1 - 0.2, 0.55, z], metal)
+      for (const height of [0.5, 0.67, 0.85]) this.box(trolley, [0.46, 0.022, 0.022], [0, height, z], metal)
+      for (let i = 0; i < 5; i++) this.box(trolley, [0.013, 0.35, 0.015], [i * 0.1 - 0.2, 0.67, z], metal)
     }
     for (const side of [-0.22, 0.22]) {
-      for (const height of [0.39, 0.54, 0.71]) this.box(trolley, [0.018, 0.022, 0.51], [side, height, 0], metal)
-      for (let i = 0; i < 6; i++) this.box(trolley, [0.015, 0.34, 0.015], [side, 0.55, i * 0.1 - 0.25], metal)
-      this.box(trolley, [0.022, 0.43, 0.025], [side, 0.5, 0.3], metal)
+      for (const height of [0.5, 0.67, 0.85]) this.box(trolley, [0.018, 0.022, 0.51], [side, height, 0], metal)
+      for (let i = 0; i < 6; i++) this.box(trolley, [0.015, 0.35, 0.015], [side, 0.67, i * 0.1 - 0.25], metal)
+      this.box(trolley, [0.022, 0.65, 0.025], [side, 0.58, 0.3], metal)
       for (const z of [-0.19, 0.2]) {
         const wheel = this.mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.043, 10), tyre, trolley, side, 0.12, z)
         wheel.rotation.z = Math.PI / 2
         this.box(trolley, [0.024, 0.2, 0.024], [side, 0.25, z], metal)
       }
     }
-    this.box(trolley, [0.49, 0.045, 0.05], [0, 0.73, 0.32], handle)
+    this.box(trolley, [0.49, 0.045, 0.05], [0, 0.9, 0.32], handle)
     trolley.add(this.basketContents)
-    const marker = this.textSprite('TU', '#f3f5df', '#46623d', 0.32, 0.17)
-    marker.position.set(-0.18, 1.47, 0.07)
-    this.shopper.add(marker)
   }
 
   private resize = () => {
@@ -380,17 +440,46 @@ export class StoreScene {
     this.renderer.setSize(width, height)
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
-    this.positionCamera()
+    this.cameraReady = false
+    this.positionCamera(0)
     this.dirty = true
   }
 
-  private positionCamera() {
-    const distance = this.camera.aspect < 1.25 ? 20 : 17.7
+  private positionCamera(time: number, paused = false) {
+    const elapsed = this.cameraTime ? Math.min((time - this.cameraTime) / 1000, 0.1) : 0
+    this.cameraTime = time
+    this.camera.fov = this.overview ? 38 : this.camera.aspect < 1 ? 66 : 56
     this.camera.zoom = 1
     this.camera.updateProjectionMatrix()
-    this.camera.position.set(Math.sin(this.yaw) * distance, 13.1, Math.cos(this.yaw) * distance)
-    this.camera.lookAt(0, 0.52, -0.28)
+    if (!this.overview) {
+      const player = this.shopper.position
+      // Stay on the open entrance side, above the shelf tops when following a rear aisle.
+      // A fixed yaw (not avatar heading) keeps camera-relative controls predictable.
+      const rearAisle = THREE.MathUtils.clamp((0.8 - player.z) / 2.5, 0, 1)
+      this.cameraGoal.set(
+        THREE.MathUtils.clamp(player.x + Math.sin(this.yaw) * 5.3, -6, 6),
+        3.4 + rearAisle * 7,
+        Math.max(3.6, player.z + Math.cos(this.yaw) * 5.3),
+      )
+      this.lookGoal.set(player.x, 0.8, player.z - 0.85)
+    } else {
+      const distance = this.camera.aspect < 1.25 ? 20 : 17.7
+      this.cameraGoal.set(Math.sin(this.yaw) * distance, 24, Math.cos(this.yaw) * distance)
+      this.lookGoal.set(0, 0.52, -0.28)
+    }
+    const snap = !this.cameraReady || this.reducedMotion.matches || paused
+    const alpha = snap ? 1 : 1 - Math.exp(-elapsed * 12)
+    this.camera.position.lerp(this.cameraGoal, alpha)
+    this.cameraLook.lerp(this.lookGoal, alpha)
+    this.cameraMoving = this.camera.position.distanceToSquared(this.cameraGoal) + this.cameraLook.distanceToSquared(this.lookGoal) > 0.00001
+    if (!this.cameraMoving) {
+      this.camera.position.copy(this.cameraGoal)
+      this.cameraLook.copy(this.lookGoal)
+    }
+    this.cameraReady = true
+    this.camera.lookAt(this.cameraLook)
     this.camera.updateMatrixWorld()
+    if (!this.overview) return
     let extent = 0
     for (const x of [-6.3, 6.3]) {
       for (const y of [0, 3.2]) {
@@ -406,15 +495,29 @@ export class StoreScene {
 
   rotate(direction: number) {
     this.yaw = THREE.MathUtils.clamp(this.yaw + direction * 0.16, -0.48, 0.48)
-    this.positionCamera()
+    this.cameraReady = false
     this.dirty = true
   }
 
-  movement(dx: number, dy: number) {
-    return { dx: dx * Math.cos(this.yaw) + dy * Math.sin(this.yaw), dy: -dx * Math.sin(this.yaw) + dy * Math.cos(this.yaw) }
+  setOverview(overview: boolean) {
+    this.overview = overview
+    this.cameraReady = false
+    this.dirty = true
+    this.options.mount.dataset.view = overview ? 'overview' : 'follow'
   }
 
-  update(x: number, y: number, walking: boolean, dx: number, dy: number, time: number, nearby?: string) {
+  resetCamera() {
+    this.yaw = 0.24
+    this.setOverview(false)
+  }
+
+  movement(dx: number, dy: number) {
+    const direction = this.cameraLook.clone().sub(this.camera.position)
+    const yaw = Math.atan2(-direction.x, -direction.z)
+    return { dx: dx * Math.cos(yaw) + dy * Math.sin(yaw), dy: -dx * Math.sin(yaw) + dy * Math.cos(yaw) }
+  }
+
+  update(x: number, y: number, walking: boolean, dx: number, dy: number, time: number, nearby?: string, paused = false) {
     if (!this.available) return
     if (x !== this.lastX || y !== this.lastY) {
       this.shopper.position.set((x - 480) / 80, 0.07, (y - 350) / 80)
@@ -434,7 +537,8 @@ export class StoreScene {
       this.lastHighlight = nearby
       this.dirty = true
     }
-    if (this.dirty || walking || this.wasWalking) {
+    if (this.dirty || walking || this.wasWalking || this.cameraMoving) {
+      this.positionCamera(time, paused)
       this.renderer.render(this.scene, this.camera)
       this.options.mount.dataset.triangles = String(this.renderer.info.render.triangles)
       this.options.mount.dataset.cartPacks = String(Math.min(this.cartCount, 6))
@@ -446,9 +550,9 @@ export class StoreScene {
   setCart(products: SceneProduct[], count: number) {
     this.basketContents.clear()
     products.slice(0, 6).forEach((product, i) => {
-      const pack = new THREE.Mesh(this.packGeometry, this.packMaterials.get(`${product.department}:${product.id}`)!)
+      const pack = this.packageMesh(product)
       pack.scale.setScalar(0.54)
-      pack.position.set((i % 2 - 0.5) * 0.18, 0.54 + Math.floor(i / 4) * 0.04, (Math.floor(i / 2) % 3 - 1) * 0.13)
+      pack.position.set((i % 2 - 0.5) * 0.18, 0.65 + Math.floor(i / 4) * 0.04, (Math.floor(i / 2) % 3 - 1) * 0.13)
       pack.rotation.z = (i % 2 ? 1 : -1) * 0.14
       pack.castShadow = true
       this.basketContents.add(pack)
@@ -500,7 +604,7 @@ export class StoreScene {
     this.renderer.domElement.removeEventListener('pointerup', this.selectShelf)
     this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost)
     this.renderer.domElement.removeEventListener('webglcontextrestored', this.contextRestored)
-    this.packGeometry.dispose()
+    this.packageGeometries.forEach(geometry => geometry.dispose())
     this.resources.forEach(resource => resource.dispose())
     this.renderer.dispose()
     this.renderer.domElement.remove()

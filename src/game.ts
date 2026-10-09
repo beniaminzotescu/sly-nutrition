@@ -17,6 +17,31 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
   let accumulator = 0
   let storeScene: StoreScene | undefined
   let threeAvailable = false
+  let overview = false
+  const viewButton = document.createElement('button')
+  viewButton.type = 'button'
+  viewButton.disabled = true
+  viewButton.className = 'view-toggle'
+  viewButton.dataset.viewToggle = ''
+  viewButton.textContent = 'Hartă de ansamblu'
+  viewButton.setAttribute('aria-label', 'Hartă de ansamblu: schimbă din camera de urmărire')
+  viewButton.setAttribute('aria-pressed', 'false')
+  document.querySelector('.camera-controls')!.prepend(viewButton)
+  document.querySelector('#movement-help')!.innerHTML = '<kbd>W A S D</kbd> / săgeți: mers relativ la cameră · <kbd>E</kbd>: raft<br><kbd>V</kbd>: urmărire / ansamblu · <kbd>Q</kbd> / <kbd>R</kbd>: rotește. Sau acces direct mai jos.'
+  world.setAttribute('aria-label', 'Magazin 3D. Mers relativ la cameră cu WASD sau săgeți. V schimbă vederea; Q și R rotesc; E explorează raftul apropiat.')
+  function updateViewButton() {
+    viewButton.textContent = overview ? 'Înapoi la urmărire' : 'Hartă de ansamblu'
+    viewButton.setAttribute('aria-label', overview ? 'Înapoi la camera de urmărire' : 'Hartă de ansamblu: schimbă din camera de urmărire')
+    viewButton.setAttribute('aria-pressed', String(overview))
+  }
+  function toggleView() {
+    if (!entered || isModalOpen() || !threeAvailable) return
+    clearMovement()
+    overview = !overview
+    storeScene?.setOverview(overview)
+    updateViewButton()
+  }
+  viewButton.addEventListener('click', toggleView)
 
   function clearMovement() {
     heldKeys.clear()
@@ -26,7 +51,7 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
   }
   function setControls() {
     document.querySelectorAll<HTMLButtonElement>('[data-department], [data-demo], [data-direction]').forEach(button => button.disabled = !entered)
-    document.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach(button => button.disabled = !entered || !threeAvailable)
+    document.querySelectorAll<HTMLButtonElement>('[data-camera], [data-view-toggle]').forEach(button => button.disabled = !entered || !threeAvailable)
     nearbyButton.disabled = !entered || !nearby
     world.tabIndex = entered ? 0 : -1
   }
@@ -36,9 +61,8 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
       departments,
       products: [...demoCatalog, ...retailerCatalog],
       inspect: id => {
-        if (!entered || isModalOpen()) return
+        if (!entered || isModalOpen() || !threeAvailable) return
         const department = departments.find(item => item.id === id)
-        world.focus({ preventScroll: true })
         clearMovement()
         if (department) inspect(department)
       },
@@ -117,7 +141,7 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
       player.dataset.facing = dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'
       renderPlayer()
     } else accumulator = 0
-    if (!document.hidden) storeScene?.update(x, y, moving, dx, dy, time, entered ? nearby?.id : undefined)
+    if (!document.hidden) storeScene?.update(x, y, moving, dx, dy, time, entered ? nearby?.id : undefined, !entered || isModalOpen())
     requestAnimationFrame(tick)
   }
   renderPlayer()
@@ -135,6 +159,13 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
       event.preventDefault()
       clearMovement()
       inspect(nearby)
+    } else if (key === 'v' && !event.repeat) {
+      event.preventDefault()
+      toggleView()
+    } else if ((key === 'q' || key === 'r') && !event.repeat && threeAvailable) {
+      event.preventDefault()
+      clearMovement()
+      storeScene?.rotate(key === 'q' ? -1 : 1)
     }
   })
   window.addEventListener('keyup', event => heldKeys.delete(event.key.toLowerCase()))
@@ -166,7 +197,7 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
     })
   })
   nearbyButton.addEventListener('click', () => {
-    if (entered && nearby) { clearMovement(); inspect(nearby) }
+    if (entered && nearby && !isModalOpen()) { clearMovement(); inspect(nearby) }
   })
   return {
     enter() {
@@ -181,6 +212,9 @@ export function createGame(inspect: (department: Department) => void, isModalOpe
       clearMovement()
       x = 470
       y = 525
+      overview = false
+      storeScene?.resetCamera()
+      updateViewButton()
       renderPlayer()
       setControls()
     },

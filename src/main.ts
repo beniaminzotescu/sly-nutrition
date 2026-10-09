@@ -3,15 +3,16 @@ import { departments, demoCatalog, retailerCatalog, type Department, type Nutrit
 import { createGame } from './game'
 import { mountOnboarding } from './onboarding'
 import { format, type Reference } from './nutrition'
-import { demoNotice, shoppingGroups, shoppingKey, shoppingNotice, shoppingText, shoppingTotals, type ShoppingEntry } from './shopping-list'
+import { amountText, demoNotice, entryAmount, initialNutritionSources, initialSource, nutritionText, partialNotice, scaled, shoppingGroups, shoppingKey, shoppingNotice, shoppingText, shoppingTotals, sourceLabels, subtotalText, totalsText, valueText, type NutritionSources, type ShoppingEntry, type ValueSource } from './shopping-list'
 
-const miniPack = (product: Product) => `<span class="mini-pack ${product.color}" aria-hidden="true">✳</span>`
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
+const miniPack = (product: Product) => `<span class="mini-pack ${escapeHtml(product.color)}" aria-hidden="true">✳</span>`
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <a class="skip-link" href="#journey">Sari la conținut</a>
   <header class="header"><a class="logo" href="./" aria-label="Atelier de mese, reîncepe">a<span>ATELIER<br>DE MESE</span><i>✳</i></a><span class="header-label">UN MIC MAGAZIN. O LISTĂ MAI CLARĂ.</span><span class="session-badge">Planificare · fără comenzi</span></header>
   <main id="journey" tabindex="-1">
     <section class="intro"><div><span class="eyebrow">PLANUL TĂU DE CUMPĂRĂTURI / O SĂPTĂMÂNĂ</span><h1>La raft, <em>în ritmul tău.</em></h1></div><p>Explorează, alege cantități, pregătește lista.<br>Apoi ia-o cu tine <strong>la magazinul fizic.</strong></p></section>
-    <p class="independent-notice">Concept educațional independent, fără afiliere, aprobare sau parteneriat cu Lidl, Metro ori Kaufland. Numele desemnează departamente viitoare; nu un catalog comercial actual.</p>
+    <p class="independent-notice">Concept educațional independent, fără afiliere, aprobare sau parteneriat cu Lidl, Metro ori Kaufland. Cele 8 produse sunt asociate departamentelor la cerere; etichetele și disponibilitatea nu sunt verificate.</p>
     <section id="onboarding" class="onboarding" aria-label="Nivelul 1: profil, energie și intenție"></section>
     <section id="store" hidden inert aria-label="Nivelul 2: magazinul de explorat">
       <div class="store-session"><div><span class="eyebrow">NIVELUL 2 / ALEGERI LA RAFT</span><p id="session-summary"></p></div><button class="text-button" id="edit-profile">Schimbă profilul / resetează sesiunea</button></div>
@@ -25,23 +26,23 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
               <div class="floor" aria-hidden="true"></div>
               ${departments.map(department => {
                 const products = retailerCatalog.filter(product => product.department === department.id)
-                return `<button class="shelf ${department.color}" style="left:${department.x}px" data-department="${department.id}" disabled aria-label="Departament ${department.name} · ${products.length ? 'explorează selecția' : 'produse în curând'}"><span class="shelf-sign"><small>${department.number} / DEPARTAMENT</small><strong>${department.name}</strong></span>${products.length ? `<span class="shelf-products">${products.slice(0, 6).map(miniPack).join('')}</span>` : '<span class="empty-shelf">Produse în curând</span>'}<span class="shelf-lip">SELECȚIE PENTRU MESE</span></button>`
+                return `<button class="shelf ${escapeHtml(department.color)}" style="left:${department.x}px" data-department="${department.id}" disabled aria-label="Departament ${escapeHtml(department.name)} · ${products.length ? `${products.length} produse la cerere` : 'produse în curând'}"><span class="shelf-sign"><small>${department.number} / DEPARTAMENT</small><strong>${escapeHtml(department.name)}</strong></span>${products.length ? `<span class="shelf-products">${products.slice(0, 6).map(miniPack).join('')}</span>` : '<span class="empty-shelf">Produse în curând</span>'}<span class="shelf-lip">SELECȚIE PENTRU MESE</span></button>`
               }).join('')}
               <div class="entrance-mat" aria-hidden="true">↑ INTRARE ↑</div>
               <div id="player" class="player" aria-hidden="true"><div class="player-shadow"></div><div class="avatar"><div class="avatar-legs"><i></i><i></i></div><div class="avatar-body"></div><div class="avatar-head"></div><div class="avatar-hair"></div><div class="avatar-arm"></div></div><div class="trolley"><span class="trolley-handle"></span><div id="trolley-packs"></div><span class="basket-grid"></span><i class="wheel wheel-one"></i><i class="wheel wheel-two"></i><b id="trolley-count" hidden>0</b></div><span class="player-label">TU</span></div>
             </div>
             <div class="camera-controls" role="group" aria-label="Vedere 3D"><span>VEDERE</span><button data-camera="-1" aria-label="Rotește vederea la stânga" disabled>↶</button><button data-camera="1" aria-label="Rotește vederea la dreapta" disabled>↷</button></div>
-            <span class="scene-demo">RAFTURI ÎN PREGĂTIRE · CONCEPT INDEPENDENT</span>
+            <span class="scene-demo">8 PRODUSE LA CERERE · ETICHETE DE VERIFICAT</span>
           </div>
           <p class="webgl-notice" id="webgl-notice" role="status" hidden>3D nu este disponibil. Poți explora magazinul 2D sau folosi butoanele directe; atelierul și căruciorul funcționează în continuare.</p>
           <div class="game-controls"><div><strong id="location" role="status">Căruciorul te așteaptă.</strong><p id="movement-help"><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> mers · <kbd>E</kbd> la raft<br>Sau folosește accesul direct de mai jos.</p></div><button class="button" id="inspect-nearby" disabled>Apropie-te de un raft</button><div class="direction-pad" role="group" aria-label="Deplasare cu atingere">${[['up', '↑', 'înainte'], ['left', '←', 'la stânga'], ['down', '↓', 'înapoi'], ['right', '→', 'la dreapta']].map(([direction, symbol, name]) => `<button data-direction="${direction}" aria-label="Mergi ${name}" disabled>${symbol}</button>`).join('')}</div></div>
           <div class="section-heading"><h2>Departamente</h2><span>Acces direct, fără deplasare</span></div>
-          <div class="department-shortcuts">${departments.map(department => `<button class="department-card" data-department="${department.id}" disabled><small>${department.number} / DEPARTAMENT</small><strong>${department.name} ↗</strong><span>${retailerCatalog.some(product => product.department === department.id) ? 'Explorează selecția' : 'Produse în curând'}</span></button>`).join('')}</div>
-          <section class="demo-workshop" aria-labelledby="demo-title"><div class="section-heading"><h2 id="demo-title">Atelier <em>demo.</em></h2><span>SEPARAT DE RETAILERI</span></div><p>Selecție pentru mese echilibrate: exemple generice de cereale, leguminoase, lactate și legume. Nu sunt produse atribuite magazinelor și nici un clasament de sănătate.</p><div class="demo-cards">${demoCatalog.map(product => `<button class="demo-card" data-demo="${product.id}" disabled>${miniPack(product)}<span><small>${product.group}</small><strong>${product.name}</strong><small>Exemplu editabil · inspectează ↗</small></span></button>`).join('')}</div></section>
+          <div class="department-shortcuts">${departments.map(department => `<button class="department-card" data-department="${department.id}" disabled><small>${department.number} / DEPARTAMENT</small><strong>${escapeHtml(department.name)} ↗</strong><span>${retailerCatalog.filter(product => product.department === department.id).length} produse la cerere · explorează</span></button>`).join('')}</div>
+          <section class="demo-workshop" aria-labelledby="demo-title"><div class="section-heading"><h2 id="demo-title">Atelier <em>demo.</em></h2><span>SEPARAT DE RETAILERI</span></div><p>Selecție pentru mese echilibrate: exemple generice de cereale, leguminoase, lactate și legume. Nu sunt produse atribuite magazinelor și nici un clasament de sănătate.</p><div class="demo-cards">${demoCatalog.map(product => `<button class="demo-card" data-demo="${escapeHtml(product.id)}" disabled>${miniPack(product)}<span><small>${escapeHtml(product.group)}</small><strong>${escapeHtml(product.name)}</strong><small>Exemplu editabil · inspectează ↗</small></span></button>`).join('')}</div></section>
         </section>
         <aside class="cart-panel" aria-labelledby="cart-title"><div class="cart-heading"><div><span class="eyebrow">LISTĂ PENTRU O SĂPTĂMÂNĂ</span><h2 id="cart-title" tabindex="-1">Cumpărături, <em>cu un plan.</em></h2></div><span id="cart-count" class="cart-count">0</span></div>
-         <div class="cart-total"><span>ENERGIE ÎN TOATE CUMPĂRĂTURILE</span><div><strong id="cart-total">0</strong> kcal</div><p>Cantități cumpărate, nu porții consumate. Nu este un buget energetic.</p></div>
-         <dl class="cart-macros"><div><dt>Greutate totală cumpărată</dt><dd id="cart-weight">0 g</dd></div><div><dt>Proteine</dt><dd id="cart-protein">0 g</dd></div><div><dt>Fibre</dt><dd id="cart-fibre">0 g</dd></div><div><dt>Grupe alimentare distincte</dt><dd id="cart-variety">0</dd></div></dl><p id="cart-groups" class="hint"></p><p id="cart-reference" class="reference-note"></p><div id="cart-items"></div>
+         <div class="cart-total"><span>ENERGIE ÎN TOATE CUMPĂRĂTURILE</span><div><strong id="cart-total">0 kcal</strong></div><p id="cart-energy-status"></p><p>Cantități cumpărate, nu porții consumate. Nu este un buget energetic.</p></div>
+         <dl class="cart-macros"><div><dt>Masă / volum cumpărat (separat)</dt><dd id="cart-weight">0 g · 0 ml</dd></div><div><dt>Proteine</dt><dd id="cart-protein">0 g</dd></div><div><dt>Fibre</dt><dd id="cart-fibre">0 g</dd></div><div><dt>Zaharuri</dt><dd id="cart-sugar">0 g</dd></div><div><dt>Grupe alimentare distincte</dt><dd id="cart-variety">0</dd></div></dl><div id="cart-partial-status" class="hint"></div><p class="hint">${partialNotice}</p><p id="cart-groups" class="hint"></p><p id="cart-reference" class="reference-note"></p><div id="cart-items"></div>
          <button class="button primary review-button" id="review-list" disabled>Revizuiește lista →</button><p id="list-state" class="hint" role="status"></p>
          <p class="cart-footnote"><span class="demo-pill">PLANIFICARE, NU COMANDĂ</span> ${shoppingNotice} Varietatea numără grupe alimentare, nu magazine. Exemplele demo nu confirmă disponibilitatea la raft.</p>
         </aside>
@@ -60,6 +61,9 @@ const detail = document.querySelector<HTMLElement>('#product-detail')!
 const cart: ShoppingEntry[] = []
 let reference: Reference | undefined
 let activeProduct: Product | undefined
+let editingEntry: ShoppingEntry | undefined
+let nutritionSources: NutritionSources
+let amountSource: ValueSource = 'unknown'
 let opener: HTMLElement | null = null
 let unlocked = false
 let finalized = false
@@ -119,7 +123,7 @@ function openDepartment(department: Department) {
   if (!unlocked) return
   activeProduct = undefined
   const products = retailerCatalog.filter(product => product.department === department.id)
-  detail.innerHTML = `<div class="department-detail"><span class="eyebrow">DEPARTAMENT ${department.number}</span><h2 id="detail-title">${department.name}</h2><div class="empty-department"><span aria-hidden="true">▤</span><h3>${products.length ? 'Selecție pentru mese echilibrate' : 'Produse în curând'}</h3><p>${products.length ? 'Consultă proveniența fiecărui produs.' : 'Acest raft este gol. Produsele vor fi adăugate treptat, după verificarea etichetelor, surselor și grupelor alimentare.'}</p>${products.map(product => `<button class="button" data-catalog="${product.id}">${product.name}</button>`).join('')}</div><p class="notice">Concept independent, fără afiliere sau aprobare ${department.name}. Niciun produs din Atelier demo nu este atribuit acestui retailer.</p><button class="button" id="department-close">Înapoi la magazin și Atelier demo →</button></div>`
+  detail.innerHTML = `<div class="department-detail"><span class="eyebrow">DEPARTAMENT ${department.number}</span><h2 id="detail-title">${escapeHtml(department.name)}</h2><div class="empty-department"><span aria-hidden="true">▤</span><h3>${products.length} produse adăugate la cerere</h3><p>Etichete și disponibilitate de verificat. Numele nu confirmă nutrienți, ingrediente, stoc sau beneficii pentru sănătate.</p>${products.map(product => `<button class="button" data-catalog="${escapeHtml(product.id)}">${escapeHtml(product.name)}</button>`).join('')}</div><p class="notice">Concept independent, fără afiliere sau aprobare ${escapeHtml(department.name)}. Niciun produs din Atelier demo nu este atribuit acestui retailer.</p><button class="button" id="department-close">Înapoi la magazin și Atelier demo →</button></div>`
   detail.querySelector('#department-close')!.addEventListener('click', () => dialog.close())
   detail.querySelectorAll<HTMLButtonElement>('[data-catalog]').forEach(button => button.addEventListener('click', () => {
     const product = products.find(item => item.id === button.dataset.catalog)
@@ -135,22 +139,28 @@ const nutrientFields = [
   { key: 'sugar', name: 'Zaharuri', unit: 'g', max: 100 },
 ] as const
 function nutritionFields(prefix: string, values: Nutrition) {
-  return nutrientFields.map(field => `<label for="${prefix}-${field.key}">${field.name} (${field.unit})<input id="${prefix}-${field.key}" type="number" min="0" max="${field.max}" step="0.1" required value="${values[field.key]}" inputmode="decimal" aria-describedby="${prefix}-error"></label>`).join('')
+  return nutrientFields.map(field => `<label for="${prefix}-${field.key}">${field.name} (${field.unit})<input id="${prefix}-${field.key}" type="number" min="0" max="${field.max}" step="0.1" value="${values[field.key] ?? ''}" placeholder="Necunoscut" inputmode="decimal" aria-describedby="${prefix}-error"></label>`).join('')
 }
-function openProduct(product: Product) {
+function openProduct(product: Product, snapshot?: ShoppingEntry) {
   if (!unlocked) return
   activeProduct = product
-  detail.innerHTML = `<div class="detail-layout"><div class="package-panel ${product.color}"><span class="eyebrow">${product.readiness === 'illustrative' ? 'ATELIER DEMO / FĂRĂ MAGAZIN CONFIRMAT' : `DEPARTAMENT ${product.department.toUpperCase()}`}</span><div id="package-front"><div class="concept-pack"><span>ATELIER<br>DE MESE</span><i aria-hidden="true">✳</i><strong>${product.name}</strong><small>REPREZENTARE CONCEPT</small></div><p>Față · reprezentare generică, nu fotografia unui ambalaj comercial.</p></div><div id="package-back" hidden><h3>Dincolo de ambalaj.</h3><span class="demo-pill">VALORI ALЕSE / 100 g</span><dl id="label-nutrition"></dl><p>Ingrediente și alergeni: informații indisponibile aici. Verifică eticheta reală înainte de consum. Nu pretindem că produsul este fără alergeni.</p></div><button class="button" id="flip-package" aria-pressed="false" aria-controls="package-front package-back">Întoarce pe verso ⟳</button><p class="hint">Gramajul unei unități cumpărate și porția de consum sunt lucruri diferite. Ambalajele demo sunt strict ilustrative, fără disponibilitate confirmată.</p></div>
-      <div class="detail-content"><span class="eyebrow">${product.group} / PLAN DE CUMPĂRĂTURI</span><h2 id="detail-title">${product.name}</h2><p class="notice">${product.provenance.source}. ${product.readiness === 'illustrative' ? 'Ambalajele și valorile sunt ipoteze de lucru, nu produse confirmate într-un magazin.' : 'Verifică eticheta și disponibilitatea actuală în magazin.'}</p>
-        <fieldset class="nutrition-inputs"><legend>Valorile alese / 100 g · demo editabil</legend>${nutritionFields('selected', product.nutrition)}</fieldset>
-        <p id="selected-error" class="input-error" role="alert" hidden>Folosește energie 0–1.000 kcal, proteine, fibre și zaharuri 0–100 g (maximum o zecimală).</p>
-        <fieldset class="purchase-inputs"><legend>Ce pui pe lista pentru o săptămână?</legend><label for="package-grams">Gramaj net / ambalaj sau unitate (g)<input id="package-grams" type="number" min="1" max="10000" step="0.1" value="${product.packageGrams}" required inputmode="decimal" aria-describedby="purchase-error purchase-help"></label><label for="purchase-quantity">Număr de ambalaje / unități<input id="purchase-quantity" type="number" min="1" max="99" step="1" value="1" required inputmode="numeric" aria-describedby="purchase-error"></label></fieldset>
-        <p id="purchase-help" class="hint">Pentru vrac, folosește o unitate și introdu greutatea cumpărată. Pentru ambalaje, introdu gramajul net al unui ambalaj și numărul de ambalaje.</p>
-        <p id="purchase-error" class="input-error" role="alert" hidden>Gramaj 1–10.000 g, maximum o zecimală; număr întreg de unități 1–99. Limite tehnice ale listei.</p>
-        <div class="purchase-summary" id="purchase-summary" aria-live="polite"></div><button class="button primary" id="add-to-cart">Adaugă cumpărăturile în listă ＋</button><p id="add-status" role="status"></p>
-        <section class="portion-estimator" aria-labelledby="portion-heading"><h3 id="portion-heading">Separat: explorează o porție</h3><p class="hint">Nu schimbă gramajul cumpărat sau lista. Aceeași porție este folosită pentru ambele exemple din comparație.</p><label for="portion">Porție de consum simulată (g)<input id="portion" type="number" min="5" max="500" step="5" value="${product.portion}" required inputmode="numeric" aria-describedby="portion-error"></label><p id="portion-error" class="input-error" role="alert" hidden>Porție 5–500 g, în pași de 5 g.</p><div class="portion-summary" id="portion-summary" aria-live="polite"></div></section>
-        <details class="comparison"><summary>Compară aceeași porție</summary><p>Introdu alte valori / 100 g. Comparăm cantități egale, nu ambalaje. Diferențele nu clasifică alimentele ca „bune” sau „rele”.</p><fieldset class="nutrition-inputs"><legend>Al doilea exemplu · demo editabil / 100 g</legend>${nutritionFields('comparison', { calories: 120, protein: 5, fibre: 2, sugar: 3 })}</fieldset><p id="comparison-error" class="input-error" role="alert" hidden>Completează energie 0–1.000 kcal, proteine, fibre și zaharuri 0–100 g, cu maximum o zecimală.</p><div id="comparison-results" class="comparison-results" aria-live="polite"></div></details>
-        <p class="hint">Datele și porțiile pot diferi între variante crude, fierte și preparate. Aceste exemple nu înlocuiesc eticheta reală sau evaluarea unui dietetician.</p><button class="text-button" id="continue-exploring">← Înapoi la atelier</button>
+  editingEntry = snapshot
+  nutritionSources = { ...(snapshot?.nutritionSources ?? initialNutritionSources(product)) }
+  amountSource = snapshot?.amountSource ?? (product.packageAmount === null ? 'unknown' : initialSource(product))
+  const unit = product.packageUnit
+  const amount = snapshot ? snapshot.packageAmount : product.packageAmount
+  detail.innerHTML = `<div class="detail-layout"><div class="package-panel ${escapeHtml(product.color)}"><span class="eyebrow">${product.readiness === 'illustrative' ? 'ATELIER DEMO / FĂRĂ MAGAZIN CONFIRMAT' : `DEPARTAMENT ${product.department.toUpperCase()}`}</span><div id="package-front"><div class="concept-pack"><span>ATELIER<br>DE MESE</span><i aria-hidden="true">✳</i><strong>${escapeHtml(product.name)}</strong><small>REPREZENTARE CONCEPT</small></div><p>Față · reprezentare generică, nu fotografia unui ambalaj comercial.</p></div><div id="package-back" hidden><h3>Dincolo de ambalaj.</h3><span class="demo-pill">VALORI / 100 ${unit}</span><dl id="label-nutrition"></dl><p>Ingrediente și alergeni: informații indisponibile aici. Verifică eticheta reală înainte de consum. Nu pretindem că produsul este fără alergeni.</p></div><button class="button" id="flip-package" aria-pressed="false" aria-controls="package-front package-back">Întoarce pe verso ⟳</button><p class="hint">Cantitatea netă cumpărată și porția de consum sunt lucruri diferite. Nu convertim masa în volum.</p></div>
+      <div class="detail-content"><span class="eyebrow">${escapeHtml(product.group)} / PLAN DE CUMPĂRĂTURI</span><h2 id="detail-title">${escapeHtml(product.name)}</h2><p class="notice">${escapeHtml(product.provenance.source)}. ${product.readiness === 'illustrative' ? 'Ambalajele și valorile sunt ipoteze de lucru, nu produse confirmate într-un magazin.' : 'Asocierea la retailer și cantitățile din denumire provin din cerere. Numele „Zero” sau „fara zahar” nu furnizează valori nutriționale. Variantele din denumire nu sunt selectate automat.'}</p>
+        <fieldset class="nutrition-inputs"><legend>Valori / 100 ${unit} · ${product.readiness === 'illustrative' ? 'demo editabil' : 'etichetă de completat'}</legend>${nutritionFields('selected', snapshot?.nutrition ?? product.nutrition)}</fieldset>
+        <p class="hint">Gol = necunoscut; 0 = zero introdus explicit. Valorile introduse de tine sunt neverificate, nu o etichetă aprobată.</p><p id="nutrition-source" class="hint"></p>
+        <p id="selected-error" class="input-error" role="alert" hidden>Folosește energie 0–1.000 kcal, proteine, fibre și zaharuri 0–100 g (maximum o zecimală), sau lasă gol.</p>
+        <fieldset class="purchase-inputs"><legend>Ce pui pe lista pentru o săptămână?</legend><label for="package-grams">Cantitate netă / ${product.unitsPerPack > 1 ? 'doză individuală' : 'ambalaj'} (${unit})<input id="package-grams" type="number" min="0.1" max="10000" step="0.1" value="${amount ?? ''}" placeholder="Necunoscut" inputmode="decimal" aria-describedby="purchase-error purchase-help"></label><label for="purchase-quantity">Număr de ${product.unitsPerPack > 1 ? `pachete (${product.unitsPerPack} doze/pachet)` : 'ambalaje / unități'}<input id="purchase-quantity" type="number" min="1" max="99" step="1" value="${snapshot?.quantity ?? 1}" required inputmode="numeric" aria-describedby="purchase-error"></label></fieldset>
+        <p id="purchase-help" class="hint">${product.unitsPerPack > 1 ? `Introdu ml pentru o singură doză, NU totalul pachetului. Numărul fix este ${product.unitsPerPack} doze/pachet; totalul net/pachet se recalculează.` : 'Introdu cantitatea netă a unui ambalaj; pentru vrac folosește o unitate.'} Poți lăsa cantitatea netă necunoscută și adăuga numai numele și numărul de ambalaje. Completează ulterior prin „Editează eticheta” din listă.</p>
+        <p id="purchase-error" class="input-error" role="alert" hidden>Cantitate netă 0,1–10.000 ${unit}, maximum o zecimală, sau gol; număr întreg de ambalaje/pachete 1–99.</p>
+        <div class="purchase-summary" id="purchase-summary" aria-live="polite"></div><button class="button primary" id="add-to-cart">${snapshot ? 'Salvează modificările acestei poziții' : 'Adaugă cumpărăturile în listă ＋'}</button><p id="add-status" role="status"></p>
+        <section class="portion-estimator" aria-labelledby="portion-heading"><h3 id="portion-heading">Separat: explorează o porție</h3><p class="hint">Porție ilustrativă, nu recomandare. Nu schimbă cantitatea cumpărată sau lista. Aceeași unitate este folosită în ambele exemple.</p><label for="portion">Porție de consum simulată (${unit})<input id="portion" type="number" min="5" max="500" step="5" value="${product.portion}" required inputmode="numeric" aria-describedby="portion-error"></label><p id="portion-error" class="input-error" role="alert" hidden>Porție 5–500 ${unit}, în pași de 5 ${unit}.</p><div class="portion-summary" id="portion-summary" aria-live="polite"></div></section>
+        <details class="comparison"><summary>Compară aceeași porție</summary><p>Introdu alte valori / 100 ${unit}, în aceeași unitate ca primul produs. Comparăm cantități egale, nu ambalaje. Diferențele nu clasifică alimentele ca „bune” sau „rele”.</p><fieldset class="nutrition-inputs"><legend>Al doilea exemplu · introdus de utilizator / neverificat / 100 ${unit}</legend>${nutritionFields('comparison', { calories: null, protein: null, fibre: null, sugar: null })}</fieldset><p id="comparison-error" class="input-error" role="alert" hidden>Folosește energie 0–1.000 kcal, proteine, fibre și zaharuri 0–100 g, cu maximum o zecimală, sau lasă gol.</p><div id="comparison-results" class="comparison-results" aria-live="polite"></div></details>
+        <p class="hint">Datele și porțiile pot diferi între variante crude, fierte și preparate. Aceste exemple nu înlocuiesc eticheta reală sau evaluarea unui dietetician.</p><button class="text-button" id="continue-exploring">← Înapoi la magazin</button>
       </div></div>`
   detail.querySelector('#flip-package')!.addEventListener('click', () => {
     const front = detail.querySelector<HTMLElement>('#package-front')!
@@ -160,7 +170,12 @@ function openProduct(product: Product) {
     button.setAttribute('aria-pressed', String(front.hidden))
     button.textContent = front.hidden ? 'Întoarce pe față ⟳' : 'Întoarce pe verso ⟳'
   })
-  detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.addEventListener('input', updateNutrition))
+  detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.addEventListener('input', () => {
+    const nutrient = nutrientFields.find(item => field.id === `selected-${item.key}`)
+    if (nutrient) nutritionSources[nutrient.key] = field.value === '' ? 'unknown' : 'manual'
+    if (field.id === 'package-grams') amountSource = field.value === '' ? 'unknown' : 'manual'
+    updateNutrition()
+  }))
   detail.querySelector('#add-to-cart')!.addEventListener('click', addToCart)
   detail.querySelector('#continue-exploring')!.addEventListener('click', () => dialog.close())
   updateNutrition()
@@ -170,7 +185,7 @@ const input = (id: string) => detail.querySelector<HTMLInputElement>(`#${id}`)!
 function validFields(ids: string[]) {
   return ids.map(id => {
     const field = input(id)
-    const valid = field.value !== '' && Number.isFinite(field.valueAsNumber) && field.checkValidity()
+    const valid = field.checkValidity() && (field.value === '' ? !field.required : Number.isFinite(field.valueAsNumber))
     field.setAttribute('aria-invalid', String(!valid))
     return valid
   }).every(Boolean)
@@ -178,7 +193,19 @@ function validFields(ids: string[]) {
 const selectedIds = nutrientFields.map(field => `selected-${field.key}`)
 const purchaseIds = ['package-grams', 'purchase-quantity']
 function readNutrition(prefix: string): Nutrition {
-  return { calories: input(`${prefix}-calories`).valueAsNumber, protein: input(`${prefix}-protein`).valueAsNumber, fibre: input(`${prefix}-fibre`).valueAsNumber, sugar: input(`${prefix}-sugar`).valueAsNumber }
+  return Object.fromEntries(nutrientFields.map(field => [field.key, readOptional(`${prefix}-${field.key}`)])) as Nutrition
+}
+function readOptional(id: string) {
+  return input(id).value === '' ? null : input(id).valueAsNumber
+}
+function currentSnapshot(): ShoppingEntry {
+  const product = structuredClone(activeProduct!)
+  const entry = {
+    product, packageAmount: readOptional('package-grams'), packageUnit: product.packageUnit,
+    unitsPerPack: product.unitsPerPack, amountSource, nutrition: readNutrition('selected'),
+    nutritionSources: { ...nutritionSources }, quantity: input('purchase-quantity').valueAsNumber,
+  }
+  return { ...entry, key: shoppingKey(entry) }
 }
 function updateNutrition() {
   const valid = validFields(selectedIds)
@@ -194,37 +221,43 @@ function updateNutrition() {
   detail.querySelector<HTMLElement>('#comparison-error')!.hidden = comparisonValid
   detail.querySelector<HTMLButtonElement>('#add-to-cart')!.disabled = !valid || !purchaseValid
   detail.querySelector('#add-status')!.textContent = ''
-  const grams = input('package-grams').valueAsNumber
-  const quantity = input('purchase-quantity').valueAsNumber
-  detail.querySelector('#purchase-summary')!.textContent = valid && purchaseValid ? `${quantity} unități × ${format(grams)} g = ${format(grams * quantity)} g cumpărate · ${format(selected.calories * grams * quantity / 100)} kcal în întreaga cantitate. Nu reprezintă o porție.` : 'Verifică gramajul, numărul de unități și valorile nutriționale.'
-  detail.querySelector('#portion-summary')!.textContent = valid && portionValid ? `${format(portion)} g → ${format(selected.calories * portion / 100)} kcal · ${format(selected.protein * portion / 100)} g proteine · ${format(selected.fibre * portion / 100)} g fibre · ${format(selected.sugar * portion / 100)} g zaharuri` : 'Verifică porția și valorile pentru acest calcul separat.'
-  detail.querySelector('#label-nutrition')!.innerHTML = nutrientFields.map(field => `<div><dt>${field.name}</dt><dd>${valid ? format(selected[field.key]) : '—'} ${field.unit}</dd></div>`).join('')
+  const entry = currentSnapshot()
+  const unit = entry.packageUnit
+  const packNet = entry.packageAmount === null ? null : entry.packageAmount * entry.unitsPerPack
+  detail.querySelector('#purchase-summary')!.textContent = valid && purchaseValid ? `${amountText(entry)}. Net/pachet: ${valueText(packNet, unit)}. Sursa cantității nete: ${sourceLabels[amountSource]}. ${valueText(scaled(selected.calories, entryAmount(entry)), 'kcal')} în întreaga cantitate. Nu reprezintă o porție.` : 'Verifică cantitatea netă, numărul de ambalaje și valorile nutriționale.'
+  detail.querySelector('#nutrition-source')!.textContent = nutrientFields.map(field => `${field.name}: ${sourceLabels[nutritionSources[field.key]]}`).join(' · ')
+  detail.querySelector('#portion-summary')!.textContent = valid && portionValid ? `${format(portion)} ${unit} → ${nutrientFields.map(field => `${field.name}: ${valueText(scaled(selected[field.key], portion), field.unit)}`).join(' · ')}` : 'Verifică porția și valorile pentru acest calcul separat.'
+  detail.querySelector('#label-nutrition')!.innerHTML = nutrientFields.map(field => `<div><dt>${field.name}</dt><dd>${valid ? valueText(selected[field.key], field.unit) : '—'} · ${sourceLabels[nutritionSources[field.key]]}</dd></div>`).join('')
   const results = detail.querySelector<HTMLElement>('#comparison-results')!
   results.hidden = !valid || !comparisonValid || !portionValid
-  results.innerHTML = valid && comparisonValid && portionValid ? `<p>Ambele exemple: ${format(portion)} g / porție</p>${nutrientFields.map(field => {
-    const first = selected[field.key] * portion / 100
-    const second = comparison[field.key] * portion / 100
+  results.innerHTML = valid && comparisonValid && portionValid ? `<p>Ambele exemple: ${format(portion)} ${unit} / porție</p>${nutrientFields.map(field => {
+    const first = scaled(selected[field.key], portion)
+    const second = scaled(comparison[field.key], portion)
+    if (first === null || second === null) return `<div><strong>${field.name}: ${valueText(first, field.unit)} vs ${valueText(second, field.unit)}</strong><span>Diferență necunoscută; lipsesc valori.</span></div>`
     const difference = first - second
     return `<div><strong>${field.name}: ${format(first)} vs ${format(second)} ${field.unit}</strong><span>Primul exemplu: ${Math.abs(difference) < 0.0001 ? 'fără diferență' : `${format(Math.abs(difference))} ${field.unit} ${difference > 0 ? 'mai mult' : 'mai puțin'}`}.</span></div>`
   }).join('')}` : ''
 }
 function addToCart() {
   if (!unlocked || !activeProduct || !validFields([...selectedIds, ...purchaseIds])) return
-  const packageGrams = input('package-grams').valueAsNumber
-  const quantity = input('purchase-quantity').valueAsNumber
-  const nutrition = readNutrition('selected')
-  const key = shoppingKey(activeProduct, packageGrams, nutrition)
-  const existing = cart.find(entry => entry.key === key)
+  const snapshot = currentSnapshot()
+  const { quantity } = snapshot
+  const existing = editingEntry ? undefined : cart.find(entry => entry.key === snapshot.key)
   const status = detail.querySelector('#add-status')!
-  if ((existing?.quantity ?? 0) + quantity > 99 || shoppingTotals(cart).quantity + quantity > 999 || (!existing && cart.length >= 30)) {
+  if ((existing?.quantity ?? 0) + quantity > 99 || shoppingTotals(cart).quantity - (editingEntry?.quantity ?? 0) + quantity > 999 || (!editingEntry && !existing && cart.length >= 30)) {
     status.textContent = 'Limită tehnică: 99 unități / variantă, 30 variante, 999 unități. Redu cantitatea sau elimină un articol.'
     return
   }
-  if (existing) existing.quantity += quantity
-  else cart.push({ key, product: { ...activeProduct, nutrition: { ...nutrition }, packageGrams }, packageGrams, nutrition: { ...nutrition }, quantity })
+  if (editingEntry) {
+    const index = cart.indexOf(editingEntry)
+    if (index < 0) return
+    cart[index] = snapshot
+    editingEntry = snapshot
+  } else if (existing) existing.quantity += quantity
+  else cart.push(snapshot)
   invalidateList()
   renderCart()
-  status.textContent = `${activeProduct.name}: ${quantity} unități × ${format(packageGrams)} g adăugate. Lista păstrează cantitatea cumpărată și valorile acestei variante; porția nu modifică lista.`
+  status.textContent = `${activeProduct.name}: ${amountText(snapshot)}. ${editingEntry ? 'Poziție actualizată.' : 'Adăugat în listă.'} Lista păstrează valorile și proveniența acestei variante; editările nesalvate și porția nu modifică lista.`
 }
 function renderCart() {
   const totals = shoppingTotals(cart)
@@ -232,20 +265,35 @@ function renderCart() {
   const groups = [...new Set(cart.map(entry => entry.product.group))]
   document.querySelector('#cart-count')!.textContent = String(count)
   document.querySelector('#cart-count')!.setAttribute('aria-label', `${count} ambalaje sau unități de cumpărat`)
-  document.querySelector('#cart-total')!.textContent = format(totals.calories)
-  document.querySelector('#cart-weight')!.textContent = `${format(totals.grams)} g`
-  document.querySelector('#cart-protein')!.textContent = `${format(totals.protein)} g`
-  document.querySelector('#cart-fibre')!.textContent = `${format(totals.fibre)} g`
+  document.querySelector('#cart-total')!.textContent = totals.calories.unknown && !totals.calories.knownCount ? '—' : `${format(totals.calories.known)} kcal`
+  document.querySelector('#cart-total')!.setAttribute('aria-label', subtotalText(totals.calories, 'kcal'))
+  document.querySelector('#cart-energy-status')!.textContent = totals.calories.unknown ? subtotalText(totals.calories, 'kcal') : ''
+  const compact = (total: typeof totals.grams, unit: string) => `${total.unknown && !total.knownCount ? '—' : format(total.known)} ${unit}${total.unknown ? ' *' : ''}`
+  document.querySelector('#cart-weight')!.innerHTML = `${compact(totals.grams, 'g')}<br>${compact(totals.millilitres, 'ml')}`
+  document.querySelector('#cart-weight')!.setAttribute('aria-label', `Masă: ${subtotalText(totals.grams, 'g')}. Volum: ${subtotalText(totals.millilitres, 'ml')}`)
+  for (const key of ['protein', 'fibre', 'sugar'] as const) {
+    document.querySelector(`#cart-${key}`)!.textContent = compact(totals[key], 'g')
+    document.querySelector(`#cart-${key}`)!.setAttribute('aria-label', subtotalText(totals[key], 'g'))
+  }
+  document.querySelector('#cart-partial-status')!.innerHTML = ([
+    ['Masă', totals.grams, 'g'], ['Volum', totals.millilitres, 'ml'],
+    ['Proteine', totals.protein, 'g'], ['Fibre', totals.fibre, 'g'], ['Zaharuri', totals.sugar, 'g'],
+  ] as const).map(([label, total, unit]) => total.unknown ? `<p>* ${label}: ${subtotalText(total, unit)}</p>` : '').join('')
   document.querySelector('#cart-variety')!.textContent = String(groups.length)
   document.querySelector('#cart-groups')!.textContent = groups.length ? groups.join(' · ') : 'Grupele apar pe măsură ce adaugi exemple.'
   document.querySelector('#cart-reference')!.textContent = reference?.energy !== undefined ? `${reference.mode === 'fictional' ? 'Reper fictiv' : 'Reper orientativ'} din nivelul 1: ≈ ${format(reference.energy)} kcal/zi, strict educațional. Separat de cumpărături: nu îl multiplicăm cu 7 și nu îl folosim drept țintă pentru listă. Nu se tipărește și nu se exportă.` : 'Lista nu are țintă calorică. Nu presupunem câte persoane sau câte mese acoperă cumpărăturile.'
   document.querySelector<HTMLButtonElement>('#review-list')!.disabled = !unlocked || cart.length === 0
-  document.querySelector('#list-state')!.textContent = cart.length ? finalized ? 'Listă finalizată. Orice modificare va necesita o nouă revizuire.' : 'Ciornă · verifică unitățile și gramajele înainte de finalizare.' : ''
+  document.querySelector('#list-state')!.textContent = cart.length ? finalized ? 'Listă finalizată. Orice modificare va necesita o nouă revizuire.' : 'Ciornă · verifică ambalajele, masa / volumul și etichetele înainte de finalizare.' : ''
   const container = document.querySelector<HTMLElement>('#cart-items')!
   container.innerHTML = cart.length ? shoppingGroups(cart).map(group => `<section class="retailer-list"><h3>${group.name}</h3>${group.id === 'atelier' ? '<p class="hint">Exemple generice; disponibilitate neconfirmată.</p>' : ''}<ul class="cart-list">${group.entries.map(entry => {
     const index = cart.indexOf(entry)
-    return `<li class="cart-item">${miniPack(entry.product)}<div><h3>${entry.product.name}</h3><p>${entry.quantity} unități × ${format(entry.packageGrams)} g net/unitate<br><strong>${format(entry.packageGrams * entry.quantity)} g cumpărate</strong> · ${entry.product.group}</p><small>${format(entry.nutrition.calories)} kcal · ${format(entry.nutrition.protein)} g proteine · ${format(entry.nutrition.fibre)} g fibre · ${format(entry.nutrition.sugar)} g zaharuri / 100 g</small><p>${format(entry.nutrition.calories * entry.packageGrams / 100 * entry.quantity)} kcal în cantitatea cumpărată</p><div class="quantity-controls"><button data-quantity="${index}" data-change="-1" aria-label="Scade o unitate ${entry.product.name}, varianta ${index + 1}">−</button><span aria-label="${entry.quantity} unități">${entry.quantity}</span><button data-quantity="${index}" data-change="1" ${entry.quantity >= 99 || count >= 999 ? 'disabled' : ''} aria-label="Adaugă o unitate ${entry.product.name}, varianta ${index + 1}">+</button><button class="text-button" data-remove="${index}" aria-label="Elimină ${entry.product.name}, varianta ${index + 1}">Elimină</button></div></div></li>`
-  }).join('')}</ul></section>`).join('') : '<div class="cart-empty"><span aria-hidden="true">✳</span><h3>O săptămână de organizat.</h3><p>Alege un exemplu din Atelier demo și stabilește numărul de unități și gramajul cumpărat.</p></div>'
+    const name = escapeHtml(entry.product.name)
+    return `<li class="cart-item">${miniPack(entry.product)}<div><h3>${name}</h3><p>${escapeHtml(amountText(entry))} · ${escapeHtml(entry.product.group)}</p><small>${escapeHtml(nutritionText(entry))}</small><p>${valueText(scaled(entry.nutrition.calories, entryAmount(entry)), 'kcal')} în cantitatea cumpărată</p><p class="hint">Cantitate netă: ${sourceLabels[entry.amountSource]}. Proveniență produs: ${escapeHtml(entry.product.provenance.source)}.</p><button class="text-button" data-edit="${index}" aria-label="Editează eticheta ${name}, varianta ${index + 1}">Editează eticheta / cantitatea netă</button><div class="quantity-controls"><button data-quantity="${index}" data-change="-1" aria-label="Scade un ambalaj/pachet ${name}, varianta ${index + 1}">−</button><span aria-label="${entry.quantity} ambalaje/pachete">${entry.quantity}</span><button data-quantity="${index}" data-change="1" ${entry.quantity >= 99 || count >= 999 ? 'disabled' : ''} aria-label="Adaugă un ambalaj/pachet ${name}, varianta ${index + 1}">+</button><button class="text-button" data-remove="${index}" aria-label="Elimină ${name}, varianta ${index + 1}">Elimină</button></div></div></li>`
+  }).join('')}</ul></section>`).join('') : '<div class="cart-empty"><span aria-hidden="true">✳</span><h3>O săptămână de organizat.</h3><p>Alege un produs din departamente sau un exemplu separat din Atelier demo. Cantitatea netă și nutrienții pot rămâne necunoscuți.</p></div>'
+  container.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(button => button.addEventListener('click', () => {
+    const entry = cart[Number(button.dataset.edit)]!
+    openProduct(entry.product, entry)
+  }))
   container.querySelectorAll<HTMLButtonElement>('[data-quantity], [data-remove]').forEach(button => button.addEventListener('click', () => {
     const index = Number(button.dataset.quantity ?? button.dataset.remove)
     const entry = cart[index]!
@@ -276,9 +324,8 @@ function invalidateList() {
   if (shoppingDialog.open) renderReview()
 }
 function renderReview() {
-  const totals = shoppingTotals(cart)
-  document.querySelector('#shopping-review-items')!.innerHTML = shoppingGroups(cart).map(group => `<section class="review-group"><h3>${group.name}</h3>${group.id === 'atelier' ? `<p class="notice">${demoNotice}</p>` : '<p class="hint">Verifică disponibilitatea și eticheta actuală înainte de cumpărare.</p>'}<ul>${group.entries.map(entry => `<li><span aria-hidden="true">□</span><div><strong>${entry.product.name}</strong><p>${entry.quantity} ambalaje/unități × ${format(entry.packageGrams)} g net/unitate = <strong>${format(entry.quantity * entry.packageGrams)} g cumpărate</strong></p><small>${format(entry.nutrition.calories * entry.packageGrams * entry.quantity / 100)} kcal în întreaga cantitate · ${entry.product.group}</small></div></li>`).join('')}</ul></section>`).join('') + `<p class="review-totals"><strong>Total cumpărături</strong> · ${totals.quantity} ambalaje/unități · ${format(totals.grams)} g · ${format(totals.calories)} kcal</p><p class="hint">Energie = kcal/100 g × gramaj net/unitate × număr de unități ÷ 100. Nu calculăm un obiectiv de consum săptămânal.</p>`
-  document.querySelector('#review-status')!.textContent = finalized ? 'Lista este pregătită pentru tipărire sau descărcare. Exemplele demo rămân fără magazin confirmat; verifică disponibilitatea în magazinul fizic.' : 'Verifică numărul de ambalaje, gramajele și magazinul fiecărui articol, apoi finalizează lista. Aceasta nu este o comandă.'
+  document.querySelector('#shopping-review-items')!.innerHTML = shoppingGroups(cart).map(group => `<section class="review-group"><h3>${escapeHtml(group.name)}</h3>${group.id === 'atelier' ? `<p class="notice">${demoNotice}</p>` : '<p class="hint">Asociere la cerere; disponibilitate și etichetă de verificat.</p>'}<ul>${group.entries.map(entry => `<li><span aria-hidden="true">□</span><div><strong>${escapeHtml(entry.product.name)}</strong><p>${escapeHtml(amountText(entry))}</p><small>${escapeHtml(nutritionText(entry))}</small><p>Cantitate netă: ${sourceLabels[entry.amountSource]}. Proveniență produs: ${escapeHtml(entry.product.provenance.source)}.</p><p>${valueText(scaled(entry.nutrition.calories, entryAmount(entry)), 'kcal')} în întreaga cantitate · ${escapeHtml(entry.product.group)}</p></div></li>`).join('')}</ul></section>`).join('') + `<p class="review-totals"><strong>Total cumpărături</strong> · ${escapeHtml(totalsText(cart))}</p><p class="hint">${partialNotice} Energie = kcal/100 g sau ml × cantitate netă în aceeași unitate ÷ 100. Nu calculăm un obiectiv de consum săptămânal.</p>`
+  document.querySelector('#review-status')!.textContent = finalized ? 'Lista este pregătită pentru tipărire sau descărcare, inclusiv câmpurile necunoscute. Finalizarea nu verifică etichetele sau disponibilitatea.' : 'Verifică numărul de ambalaje/pachete, masa / volumul și magazinul fiecărui articol. Câmpurile necunoscute se păstrează. Aceasta nu este o comandă.'
   document.querySelector<HTMLButtonElement>('#finalize-list')!.disabled = finalized || !cart.length
   document.querySelector<HTMLButtonElement>('#print-shopping')!.disabled = !finalized
   document.querySelector<HTMLButtonElement>('#download-shopping')!.disabled = !finalized
@@ -330,6 +377,7 @@ dialog.querySelector('.close-button')!.addEventListener('click', () => dialog.cl
 dialog.addEventListener('close', () => {
   game.clearMovement()
   activeProduct = undefined
+  editingEntry = undefined
   detail.querySelectorAll<HTMLInputElement>('input').forEach(field => field.value = '')
   detail.replaceChildren()
   document.body.classList.remove('modal-open')
